@@ -1,10 +1,86 @@
 import os
+import json
 import requests
 import streamlit as st
 
 API_URL = os.getenv("API_URL", "http://localhost:8000/chat/")
 
 st.set_page_config(page_title="Olist Multi-Agent Assistant", layout="wide")
+
+st.markdown(
+    """
+    <style>
+    section.main > div {
+        padding-top: 1rem;
+    }
+
+    div[data-testid="stForm"] {
+        border: 1px solid #E5E7EB;
+        border-radius: 14px;
+        padding: 12px 14px 6px 14px;
+        background: #FFFFFF;
+    }
+
+    .agent-tag {
+        display: inline-block;
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-top: 8px;
+        margin-bottom: 4px;
+        border: 1px solid rgba(0,0,0,0.06);
+    }
+
+    .status-text {
+        color: #9CA3AF;
+        font-size: 0.92rem;
+    }
+
+    .section-label {
+        color: #6B7280;
+        font-size: 0.82rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-top: 0.25rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .section-spacer {
+        margin-top: 0.5rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .typing {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #9CA3AF;
+        font-size: 0.92rem;
+        margin-top: 4px;
+    }
+
+    .dot {
+        width: 6px;
+        height: 6px;
+        background-color: #9CA3AF;
+        border-radius: 50%;
+        animation: blink 1.4s infinite both;
+    }
+
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes blink {
+        0%, 80%, 100% { opacity: 0.2; }
+        40% { opacity: 1; }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.title("🛒 Olist Commerce Intelligence Copilot")
 st.caption("Ask business questions about sales, delivery, reviews, sellers, products, and recommendations.")
 
@@ -91,6 +167,9 @@ if "last_debug" not in st.session_state:
 if "draft_prompt" not in st.session_state:
     st.session_state.draft_prompt = ""
 
+if "active_chat" not in st.session_state:
+    st.session_state.active_chat = None
+
 
 # ----------------------------
 # Helpers
@@ -99,21 +178,29 @@ def set_prompt(prompt_text: str):
     st.session_state.draft_prompt = prompt_text
 
 
-def call_api(question, history):
+def stream_api(question, history):
     payload = {
         "question": question,
         "history": history,
     }
-    try:
-        response = requests.post(API_URL, json=payload, timeout=180)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        return {
-            "answer": f"API error: {e}",
-            "selected_agent": "N/A",
-            "debug": {},
-        }
+
+    stream_url = API_URL.rstrip("/")
+    if stream_url.endswith("/chat"):
+        stream_url = stream_url + "/stream/"
+    else:
+        stream_url = stream_url.replace("/chat/", "/chat/stream/")
+
+    response = requests.post(
+        stream_url,
+        json=payload,
+        stream=True,
+        timeout=180,
+    )
+    response.raise_for_status()
+
+    for line in response.iter_lines():
+        if line:
+            yield line.decode("utf-8")
 
 
 def build_history_from_conversations(conversations, max_pairs=10):
@@ -124,26 +211,71 @@ def build_history_from_conversations(conversations, max_pairs=10):
     return history
 
 
-def process_prompt(prompt_text: str):
+def process_prompt_streaming(prompt_text: str, answer_placeholder, status_placeholder):
     history = build_history_from_conversations(st.session_state.conversations, max_pairs=10)
 
-    with st.spinner("Generating response..."):
-        result = call_api(prompt_text, history)
+    streamed_text = ""
+    selected_agent = "Unknown"
+    debug = {}
 
-    answer = result.get("answer", "No answer generated.")
-    selected_agent = result.get("selected_agent", "Unknown")
-    debug = result.get("debug", {})
+    try:
+        status_placeholder.markdown(
+            """
+            <div class="typing">
+                <span>Generating response</span>
+                <span class="dot"></span>
+                <span class="dot"></span>
+                <span class="dot"></span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    st.session_state.conversations.append(
-        {
-            "question": prompt_text,
-            "answer": answer,
-            "agent": selected_agent,
-            "debug": debug,
-        }
-    )
+        for chunk in stream_api(prompt_text, history):
+            data = json.loads(chunk)
+
+            if data.get("type") == "token":
+                streamed_text = data.get("content", "")
+                answer_placeholder.markdown(streamed_text + "▌")
+                if st.session_state.active_chat is not None:
+                    st.session_state.active_chat["answer"] = streamed_text
+
+            elif data.get("type") == "done":
+                streamed_text = data.get("answer", streamed_text)
+                selected_agent = data.get("selected_agent", "Unknown")
+                debug = data.get("debug", {})
+                answer_placeholder.markdown(streamed_text)
+
+                if st.session_state.active_chat is not None:
+                    st.session_state.active_chat["answer"] = streamed_text
+                    st.session_state.active_chat["agent"] = selected_agent
+                    st.session_state.active_chat["debug"] = debug
+
+        status_placeholder.empty()
+
+    except Exception as e:
+        streamed_text = f"API error: {e}"
+        selected_agent = "N/A"
+        debug = {}
+        answer_placeholder.markdown(streamed_text)
+        status_placeholder.empty()
+
+        if st.session_state.active_chat is not None:
+            st.session_state.active_chat["answer"] = streamed_text
+            st.session_state.active_chat["agent"] = selected_agent
+            st.session_state.active_chat["debug"] = debug
+
+    completed_chat = {
+        "question": prompt_text,
+        "answer": streamed_text,
+        "agent": selected_agent,
+        "debug": debug,
+    }
+
+    st.session_state.conversations.append(completed_chat)
     st.session_state.last_debug = debug
     st.session_state.draft_prompt = ""
+    st.session_state.active_chat = None
 
 
 def render_sidebar_section_header(theme_key: str):
@@ -192,17 +324,10 @@ def render_agent_tag(agent_name: str):
 
     st.markdown(
         f"""
-        <div style="
-            display: inline-block;
-            padding: 6px 12px;
-            border-radius: 999px;
+        <div class="agent-tag" style="
             background-color: {bg};
             color: {text};
-            border: 1px solid {border};
-            font-size: 0.85rem;
-            font-weight: 600;
-            margin-top: 8px;
-            margin-bottom: 4px;
+            border-color: {border};
         ">
             {label}
         </div>
@@ -211,46 +336,10 @@ def render_agent_tag(agent_name: str):
     )
 
 
-# ----------------------------
-# Sidebar
-# ----------------------------
-with st.sidebar:
-    st.header("Prompt Library")
-    st.caption("Choose a sample question by capability.")
-
-    render_sidebar_section_header("sql")
-    with st.expander("Show prompts", expanded=True):
-        for q in SQL_SAMPLES:
-            if st.button(q, key=f"sql_{q}"):
-                set_prompt(q)
-
-    render_sidebar_section_header("rag")
-    with st.expander("Show prompts", expanded=False):
-        for q in RAG_SAMPLES:
-            if st.button(q, key=f"rag_{q}"):
-                set_prompt(q)
-
-    render_sidebar_section_header("rootcause")
-    with st.expander("Show prompts", expanded=False):
-        for q in ROOTCAUSE_SAMPLES:
-            if st.button(q, key=f"root_{q}"):
-                set_prompt(q)
-
-    render_sidebar_section_header("recommendation")
-    with st.expander("Show prompts", expanded=False):
-        for q in RECOMMENDATION_SAMPLES:
-            if st.button(q, key=f"rec_{q}"):
-                set_prompt(q)
-
-    st.divider()
-    st.subheader("View Options")
-    show_debug_panel = st.toggle("Show telemetry panel", value=True)
-    show_full_debug = st.toggle("Show raw debug JSON", value=False)
+def render_section_label(text: str):
+    st.markdown(f"<div class='section-label'>{text}</div>", unsafe_allow_html=True)
 
 
-# ----------------------------
-# Telemetry renderers
-# ----------------------------
 def render_supervisor_telemetry(debug):
     sup = debug.get("supervisor_telemetry", {})
     routing = sup.get("routing", {})
@@ -406,6 +495,43 @@ def render_debug_panel(debug, show_full_debug=False):
 
 
 # ----------------------------
+# Sidebar
+# ----------------------------
+with st.sidebar:
+    st.header("Prompt Library")
+    st.caption("Choose a sample question by capability.")
+
+    render_sidebar_section_header("sql")
+    with st.expander("Show prompts", expanded=True):
+        for q in SQL_SAMPLES:
+            if st.button(q, key=f"sql_{q}"):
+                set_prompt(q)
+
+    render_sidebar_section_header("rag")
+    with st.expander("Show prompts", expanded=False):
+        for q in RAG_SAMPLES:
+            if st.button(q, key=f"rag_{q}"):
+                set_prompt(q)
+
+    render_sidebar_section_header("rootcause")
+    with st.expander("Show prompts", expanded=False):
+        for q in ROOTCAUSE_SAMPLES:
+            if st.button(q, key=f"root_{q}"):
+                set_prompt(q)
+
+    render_sidebar_section_header("recommendation")
+    with st.expander("Show prompts", expanded=False):
+        for q in RECOMMENDATION_SAMPLES:
+            if st.button(q, key=f"rec_{q}"):
+                set_prompt(q)
+
+    st.divider()
+    st.subheader("View Options")
+    show_debug_panel = st.toggle("Show telemetry panel", value=True)
+    show_full_debug = st.toggle("Show raw debug JSON", value=False)
+
+
+# ----------------------------
 # Layout
 # ----------------------------
 if show_debug_panel:
@@ -430,19 +556,52 @@ with chat_col:
         with col_button:
             submitted = st.form_submit_button("Ask", use_container_width=True)
 
-    if submitted and question.strip():
-        process_prompt(question.strip())
-        st.rerun()
+    if submitted and question.strip() and st.session_state.active_chat is None:
+        st.session_state.active_chat = {
+            "question": question.strip(),
+            "answer": "",
+            "agent": None,
+            "debug": {},
+        }
 
-    for convo in reversed(st.session_state.conversations):
-        with st.chat_message("user"):
-            st.markdown(convo["question"])
+    active_container = st.container()
+    history_container = st.container()
 
-        with st.chat_message("assistant"):
-            st.markdown(convo["answer"])
-            render_agent_tag(convo.get("agent", "Unknown"))
+    with active_container:
+        if st.session_state.active_chat is not None:
+            render_section_label("Active Conversation")
 
-        st.divider()
+            with st.chat_message("user"):
+                st.markdown(st.session_state.active_chat["question"])
+
+            with st.chat_message("assistant"):
+                answer_placeholder = st.empty()
+                status_placeholder = st.empty()
+
+                process_prompt_streaming(
+                    st.session_state.active_chat["question"],
+                    answer_placeholder=answer_placeholder,
+                    status_placeholder=status_placeholder,
+                )
+
+                render_agent_tag(st.session_state.conversations[-1].get("agent", "Unknown"))
+
+            st.divider()
+            st.rerun()
+
+    with history_container:
+        if st.session_state.conversations:
+            render_section_label("Recent History")
+
+            for convo in reversed(st.session_state.conversations):
+                with st.chat_message("user"):
+                    st.markdown(convo["question"])
+
+                with st.chat_message("assistant"):
+                    st.markdown(convo["answer"])
+                    render_agent_tag(convo.get("agent", "Unknown"))
+
+                st.divider()
 
 
 if show_debug_panel and debug_col is not None:
