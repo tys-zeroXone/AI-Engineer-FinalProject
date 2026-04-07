@@ -1,4 +1,5 @@
 from typing import List, Dict, Any
+import time
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
@@ -20,15 +21,32 @@ class RAGAgent:
         )
 
     def run(self, question: str, history: List[Dict[str, str]]) -> Dict[str, Any]:
+        agent_start = time.perf_counter()
+
         result = answer_with_rag(
             question=question,
             llm=self.llm,
             vectorstore=self.vectorstore
         )
+
+        total_elapsed = time.perf_counter() - agent_start
+
         return {
             "selected_agent": "RAGAgent",
             "answer": result["answer"],
             "debug": {
-                "sources": result["sources"]
+                "agent_telemetry": {
+                    "agent_name": "RAGAgent",
+                    "timing": {
+                        "total_latency_sec": round(total_elapsed, 4),
+                        **result["telemetry"].get("timing", {})
+                    },
+                    "tokens": result["telemetry"].get("tokens", {}),
+                    "retrieval": {
+                        "sources_count": len(result["sources"]),
+                        "sources": result["sources"]
+                    },
+                    "quality": result["telemetry"].get("quality", {})
+                }
             }
         }

@@ -1,4 +1,5 @@
 from typing import Dict, Any
+import time
 
 from langchain_qdrant import QdrantVectorStore
 
@@ -14,11 +15,26 @@ def get_vector_store(embeddings, collection_name: str, qdrant_url: str, qdrant_a
 
 
 def retrieve_docs_only(question: str, vectorstore, k: int = 4):
-    return vectorstore.similarity_search(question, k=k)
+    start = time.perf_counter()
+    docs = vectorstore.similarity_search(question, k=k)
+    elapsed = time.perf_counter() - start
+    return {
+        "docs": docs,
+        "telemetry": {
+            "timing": {
+                "retrieval_sec": round(elapsed, 4)
+            },
+            "quality": {
+                "status": "success",
+                "docs_retrieved": len(docs)
+            }
+        }
+    }
 
 
 def answer_with_rag(question: str, llm, vectorstore) -> Dict[str, Any]:
-    docs = vectorstore.similarity_search(question, k=4)
+    retrieval = retrieve_docs_only(question, vectorstore, k=4)
+    docs = retrieval["docs"]
     context = "\n\n".join([doc.page_content for doc in docs])
 
     prompt = f"""
@@ -33,7 +49,11 @@ User Question:
 Context:
 {context}
 """
-    answer = llm.invoke(prompt).content
+    start = time.perf_counter()
+    response = llm.invoke(prompt)
+    elapsed = time.perf_counter() - start
+
+    usage = getattr(response, "response_metadata", {}).get("token_usage", {}) or {}
 
     sources = [
         {
@@ -44,6 +64,23 @@ Context:
     ]
 
     return {
-        "answer": answer,
-        "sources": sources
+        "answer": response.content,
+        "sources": sources,
+        "telemetry": {
+            "timing": {
+                **retrieval["telemetry"].get("timing", {}),
+                "generation_sec": round(elapsed, 4),
+            },
+            "tokens": {
+                "input_tokens": usage.get("prompt_tokens", 0),
+                "output_tokens": usage.get("completion_tokens", 0),
+                "total_tokens": usage.get("total_tokens", 0),
+            },
+            "quality": {
+                "status": "success",
+                "docs_retrieved": len(docs),
+                "has_sources": len(sources) > 0,
+                "accuracy_note": "Execution-quality telemetry only. RAG accuracy needs benchmark evaluation."
+            }
+        }
     }

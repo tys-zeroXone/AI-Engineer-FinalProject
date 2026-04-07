@@ -5,6 +5,14 @@ from tools.db_tools import run_sql_query
 
 def build_root_cause_prompt(question: str, db_path: str):
     diagnostics = {}
+    telemetry = {
+        "timing": {},
+        "quality": {
+            "status": "success",
+            "diagnostic_queries_attempted": 0,
+            "diagnostic_queries_succeeded": 0,
+        }
+    }
 
     queries = {
         "late_delivery_overall": """
@@ -55,10 +63,22 @@ def build_root_cause_prompt(question: str, db_path: str):
     }
 
     for name, query in queries.items():
+        telemetry["quality"]["diagnostic_queries_attempted"] += 1
         try:
-            diagnostics[name] = run_sql_query(db_path, query)
+            result = run_sql_query(db_path, query)
+            diagnostics[name] = {
+                "query": query.strip(),
+                "rows": result["rows"],
+                "row_count": len(result["rows"]),
+            }
+            telemetry["timing"][f"{name}_sec"] = result["telemetry"]["timing"]["sql_execution_sec"]
+            telemetry["quality"]["diagnostic_queries_succeeded"] += 1
         except Exception as e:
-            diagnostics[name] = [{"error": str(e)}]
+            diagnostics[name] = {
+                "query": query.strip(),
+                "error": str(e),
+                "rows": []
+            }
 
     prompt = f"""
 You are a commerce root-cause analyst.
@@ -73,11 +93,20 @@ Rank the most plausible drivers and explain them clearly.
 Diagnostics:
 {diagnostics}
 """
-    return prompt, diagnostics
+    return prompt, diagnostics, telemetry
 
 
-def build_recommendation_context(question: str, db_path: str) -> str:
+def build_recommendation_context(question: str, db_path: str) -> Dict[str, Any]:
     snippets = []
+    query_logs = []
+    telemetry = {
+        "timing": {},
+        "quality": {
+            "status": "success",
+            "analytics_queries_attempted": 0,
+            "analytics_queries_succeeded": 0,
+        }
+    }
 
     candidate_queries = [
         """
@@ -121,11 +150,32 @@ def build_recommendation_context(question: str, db_path: str) -> str:
         """
     ]
 
-    for q in candidate_queries:
+    for idx, q in enumerate(candidate_queries, start=1):
+        telemetry["quality"]["analytics_queries_attempted"] += 1
         try:
-            rows = run_sql_query(db_path, q)
+            result = run_sql_query(db_path, q)
+            rows = result["rows"]
             snippets.append(str(rows[:10]))
+            query_logs.append({
+                "name": f"analytics_query_{idx}",
+                "query": q.strip(),
+                "row_count": len(rows),
+                "preview": rows[:5],
+            })
+            telemetry["timing"][f"analytics_query_{idx}_sec"] = result["telemetry"]["timing"]["sql_execution_sec"]
+            telemetry["quality"]["analytics_queries_succeeded"] += 1
         except Exception as e:
             snippets.append(f"Query failed: {e}")
+            query_logs.append({
+                "name": f"analytics_query_{idx}",
+                "query": q.strip(),
+                "error": str(e),
+                "row_count": 0,
+                "preview": [],
+            })
 
-    return "\n\n".join(snippets)
+    return {
+        "context": "\n\n".join(snippets),
+        "query_logs": query_logs,
+        "telemetry": telemetry
+    }

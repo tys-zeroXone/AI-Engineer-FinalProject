@@ -1,262 +1,199 @@
 # 🛒 Olist Commerce Intelligence Copilot
 
-## Multi-Agent Generative AI System using LangGraph, FastAPI, and Qdrant
+**Multi-Agent AI System for E-commerce Analytics & Decision Support**
 
 ---
 
-# 1. Overview
+## 📌 Overview
 
-This project implements a **Multi-Agent Generative AI system** designed to analyze and generate insights from e-commerce data using the **Olist dataset**.
+This project implements a **multi-agent AI system** designed to help business users analyze, diagnose, and improve e-commerce marketplace performance.
 
-The system integrates:
+It combines:
 
-* **Large Language Models (LLM)** for reasoning and natural language interaction
-* **LangGraph** for multi-agent orchestration
-* **FastAPI** as a backend REST API
-* **Qdrant** as a vector database for Retrieval-Augmented Generation (RAG)
-* **SQLite** as a structured analytics database
-* **Streamlit** for interactive user interface
-* **Docker + GCP** for deployment
+* **Structured analytics (SQL)**
+* **Knowledge retrieval (RAG)**
+* **Diagnostic reasoning (Root Cause)**
+* **Strategic recommendations (Consulting-style AI)**
 
----
-
-# 2. Objectives
-
-The goal of this project is to:
-
-* Build a **multi-agent AI system**
-* Enable **natural language querying over structured + unstructured data**
-* Demonstrate:
-
-  * Text-to-SQL analytics
-  * Knowledge retrieval (RAG)
-  * Root cause analysis
-  * Recommendation generation
-* Deploy as:
-
-  * **REST API (FastAPI)**
-  * **Interactive UI (Streamlit)**
-  * **Dockerized cloud-ready application**
+All orchestrated using a **Supervisor Agent (LangGraph)**.
 
 ---
 
-# 3. System Architecture
+## 🎯 Key Objective
 
-## 🔹 High-Level Flow
+Enable business stakeholders to ask natural language questions like:
+
+* *“What are the top product categories by revenue?”*
+* *“Why are review scores low?”*
+* *“What actions should we prioritize?”*
+
+…and receive **data-driven insights and recommendations**.
+
+---
+
+## 🧠 System Architecture
 
 ```
-User → Streamlit UI → FastAPI → LangGraph Supervisor → Agents → Response
+User (Streamlit UI)
+        ↓
+FastAPI Backend (/chat)
+        ↓
+Supervisor Agent (LangGraph)
+        ↓
+ ┌────────────┬──────────────┬──────────────┬──────────────┐
+ │ SQL Agent  │ RAG Agent     │ Root Cause    │ Recommendation│
+ │ (SQLite)   │ (Qdrant)      │ (Diagnostics) │ (Strategy)    │
+ └────────────┴──────────────┴──────────────┴──────────────┘
+        ↓
+Final LLM Response
 ```
 
-## 🔹 Core Components
+---
 
-| Layer           | Component    | Description                         |
-| --------------- | ------------ | ----------------------------------- |
-| Frontend        | Streamlit    | Chat interface for user interaction |
-| Backend         | FastAPI      | REST API handling requests          |
-| Orchestration   | LangGraph    | Multi-agent workflow engine         |
-| LLM             | OpenAI GPT   | Reasoning & generation              |
-| Structured Data | SQLite       | Olist database                      |
-| Vector DB       | Qdrant       | Knowledge retrieval                 |
-| Deployment      | Docker + GCP | Cloud hosting                       |
+## 🧩 Core Components
+
+### 1. Supervisor Agent (Orchestration)
+
+* Routes user queries to the appropriate agent
+* Supports multi-step flow:
+
+  * **Root Cause → Recommendation**
 
 ---
 
-# 4. Multi-Agent Architecture
+### 2. SQL Agent (Structured Analytics)
 
-## Supervisor Agent (LangGraph)
+* Converts natural language → SQL query
+* Executes query on SQLite database
+* Returns business insights
 
-* Routes user queries to appropriate agents
-* Uses LLM-based intent classification
-* Supports multi-step execution
+**Example:**
 
-### Routing Logic
-
-| Intent                      | Agent                |
-| --------------------------- | -------------------- |
-| KPI / metrics / aggregation | SQL Agent            |
-| Definitions / schema        | RAG Agent            |
-| "Why" / diagnosis           | Root Cause Agent     |
-| "What should we do"         | Recommendation Agent |
+> “Top 5 categories by revenue”
 
 ---
 
-## 4.1 SQL Agent (Text-to-SQL)
+### 3. RAG Agent (Knowledge Retrieval)
 
-### Purpose
+* Uses **Qdrant vector database**
+* Retrieves business definitions & documentation
+* Answers conceptual questions
 
-* Query structured data using natural language
+**Example:**
 
-### Capabilities
-
-* Revenue analysis
-* Delivery performance
-* Customer metrics
-* Seller rankings
-
-### Example
-
-> "Top 5 product categories by revenue"
+> “What is late delivery?”
 
 ---
 
-## 4.2 RAG Agent (Knowledge Retrieval)
+### 4. Root Cause Agent (Diagnostics)
 
-### Purpose
+* Runs multiple analytical queries
+* Identifies drivers of business issues
 
-* Answer conceptual and schema-related questions
+**Example:**
 
-### Data Sources
-
-* Schema documentation
-* KPI definitions
-* Business glossary
-
-### Example
-
-> "What is late delivery?"
+> “Why are review scores low?”
 
 ---
 
-## 4.3 Root Cause Agent
+### 5. Recommendation Agent (Strategy Engine)
 
-### Purpose
+* Combines:
 
-* Diagnose issues and identify drivers
+  * Analytics context
+  * Retrieved knowledge
+  * LLM reasoning
 
-### Example
+Outputs:
 
-> "Why are review scores low?"
-
-### Analysis Includes
-
-* Delivery delays
-* Freight ratio
-* Seller performance
-* Category patterns
-
----
-
-## 4.4 Recommendation Agent
-
-### Purpose
-
-* Generate business actions from insights
-
-### Example
-
-> "How to reduce late deliveries?"
-
-### Output
-
-* Action plan
-* Prioritized recommendations
+* Key findings
+* Implications
+* Prioritized actions
 * Executive summary
 
 ---
 
-## 4.5 LangGraph Flow
+## ⚙️ Tech Stack
 
-### Standard Flow
+| Layer            | Technology                    |
+| ---------------- | ----------------------------- |
+| Frontend         | Streamlit                     |
+| Backend          | FastAPI                       |
+| Orchestration    | LangGraph                     |
+| LLM              | OpenAI (GPT-4o / GPT-4o-mini) |
+| Vector DB        | Qdrant                        |
+| Database         | SQLite                        |
+| Embeddings       | text-embedding-3-small        |
+| Containerization | Docker                        |
+
+---
+
+## 📂 Project Structure
 
 ```
-Router → Agent → END
-```
-
-### Advanced Flow
-
-```
-Router → RootCause → Recommendation → END
+project/
+│
+├── agents/
+│   ├── sql_agent.py
+│   ├── rag_agent.py
+│   ├── rootcause_agent.py
+│   ├── recommendation_agent.py
+│   └── supervisor.py
+│
+├── tools/
+│   ├── db_tools.py
+│   ├── analytics_tools.py
+│   ├── rag_tools.py
+│   └── schema_tools.py
+│
+├── data/
+│   └── Olist_Database.db
+│
+├── docs/
+│   ├── schema_docs.jsonl
+│   ├── business_glossary.jsonl
+│   └── kpi_docs.jsonl
+│
+├── setup_qdrant.py
+├── main.py (FastAPI)
+├── streamlitapp.py
+├── docker-compose.yaml
+└── README.md
 ```
 
 ---
 
-# 5. Data Architecture
+## 🚀 Getting Started
 
-## Database: SQLite (Olist)
-
-### Key Tables
-
-| Table         | Description                        |
-| ------------- | ---------------------------------- |
-| orders        | Order lifecycle & delivery metrics |
-| order_items   | Revenue & logistics                |
-| review_orders | Customer satisfaction              |
-| payment_order | Payment behavior                   |
-| products      | Product metadata                   |
-| sellers       | Seller info                        |
-| customers     | Customer segmentation              |
-
----
-
-## Vector Database: Qdrant
-
-Used for:
-
-* Schema understanding
-* KPI definitions
-* Business glossary
-* Analytical context
-
----
-
-# 6. Tech Stack
-
-## Backend
-
-* FastAPI
-* LangChain
-* LangGraph
-
-## AI / LLM
-
-* OpenAI GPT-4o
-* OpenAI Embeddings
-
-## Data
-
-* SQLite
-* Pandas
-
-## Vector DB
-
-* Qdrant
-
-## Frontend
-
-* Streamlit
-
-## DevOps
-
-* Docker
-* Docker Compose
-* Google Cloud Platform (GCP)
-
----
-
-# 7. Installation & Setup
-
-## 7.1 Clone Repository
+### 1. Clone Repository
 
 ```bash
-git clone <repo_url>
-cd project
+git clone <repo-url>
+cd <project-folder>
 ```
 
 ---
 
-## 7.2 Create `.env`
+### 2. Setup Environment
+
+Create `.env` file:
 
 ```env
-OPENAI_API_KEY=your_key
+OPENAI_API_KEY=your_api_key
 QDRANT_URL=your_qdrant_url
-QDRANT_API_KEY=your_qdrant_key
-SQLITE_DB_PATH=data/Olist_Database.db
+QDRANT_API_KEY=your_qdrant_api_key
+DB_PATH=data/Olist_Database.db
 ```
 
 ---
 
-## 7.3 Install Dependencies
+### 3. Install Dependencies
+
+```bash
+poetry install
+```
+
+or
 
 ```bash
 pip install -r requirements.txt
@@ -264,23 +201,29 @@ pip install -r requirements.txt
 
 ---
 
-## 7.4 Initialize Vector Database
+### 4. Setup Vector Database (Qdrant)
 
 ```bash
-python setup_qdrant.py
+poetry run python setup_qdrant.py
+```
+
+This will:
+
+* Load documents from `/docs`
+* Generate embeddings
+* Store into Qdrant collection
+
+---
+
+### 5. Run Backend (FastAPI)
+
+```bash
+poetry run uvicorn main:app --reload --port 8000
 ```
 
 ---
 
-## 7.5 Run Backend
-
-```bash
-uvicorn main:app --reload
-```
-
----
-
-## 7.6 Run Frontend
+### 6. Run Frontend (Streamlit)
 
 ```bash
 streamlit run streamlitapp.py
@@ -288,145 +231,118 @@ streamlit run streamlitapp.py
 
 ---
 
-# 8. Docker Deployment
-
-## Build & Run
+## 🐳 Docker Setup (Recommended)
 
 ```bash
-docker compose up --build
+docker-compose up --build
 ```
 
-## Access
+Services:
 
-* API → `http://localhost:8000`
-* UI → `http://localhost:8501`
-
----
-
-# 9. GCP Deployment
-
-## Recommended Setup
-
-| Component        | Service                    |
-| ---------------- | -------------------------- |
-| Backend + Agents | Cloud Run / Compute Engine |
-| Vector DB        | Managed Qdrant             |
-| LLM              | OpenAI API                 |
+* FastAPI → `localhost:8000`
+* Streamlit → `localhost:8501`
 
 ---
 
-# 10. API Specification
+## 🧪 Example Queries
 
-## POST `/chat/`
+### 📊 SQL Agent
 
-### Request
+* “Top product categories by revenue”
+* “Late delivery rate by seller”
 
-```json
-{
-  "question": "Why are deliveries late?",
-  "history": []
-}
-```
+### 📚 RAG Agent
 
-### Response
+* “What is freight ratio?”
+* “Explain dataset schema”
 
-```json
-{
-  "answer": "...",
-  "selected_agent": "RootCauseAgent",
-  "debug": {}
-}
-```
+### 🔍 Root Cause Agent
 
----
+* “Why are review scores low?”
+* “What drives late deliveries?”
 
-# 11. Example Use Cases
+### 🎯 Recommendation Agent
 
-### 1. Sales Analysis
-
-> "Top categories by revenue"
-
-### 2. Delivery Performance
-
-> "Late delivery rate"
-
-### 3. Customer Insights
-
-> "Average review score"
-
-### 4. Root Cause
-
-> "Why are reviews low?"
-
-### 5. Recommendations
-
-> "How to improve delivery performance?"
+* “How to improve marketplace performance?”
+* “What actions should management prioritize?”
 
 ---
 
-# 12. Sample Demo Flow
+## 📊 Observability & Telemetry
 
-1. Ask KPI question → SQL Agent
-2. Ask definition → RAG Agent
-3. Ask "why" → Root Cause
-4. Ask strategy → Recommendation
+The system includes a dedicated **Observability Panel**:
 
----
+### Metrics tracked:
 
-# 13. Key Features
+* Latency (routing, execution, total)
+* Token usage (input/output)
+* SQL query & execution time
+* Retrieved documents
+* Diagnostic queries
+* Recommendation pipeline
 
-* Multi-agent orchestration
-* Hybrid data access (SQL + RAG)
-* Root cause analysis
-* Business recommendation engine
-* Cloud-ready deployment
-
----
-
-# 14. Limitations
-
-* LLM may generate imperfect SQL
-* Depends on OpenAI API latency
-* SQLite not scalable for large datasets
-* RAG quality depends on document quality
+⚠️ Note:
+“Accuracy” shown is **execution quality**, not ground-truth correctness.
 
 ---
 
-# 15. Future Improvements
+## 🧠 Key Design Highlights
 
-* Add SQL validation & retry
-* Add dashboard visualizations
-* Use BigQuery instead of SQLite
-* Add caching layer
-* Add user authentication
-* Improve agent memory
+### ✅ Multi-Agent Architecture
 
----
+* Specialized agents for different problem types
 
-# 16. Conclusion
+### ✅ Hybrid Intelligence
 
-This project demonstrates a **real-world multi-agent AI system** that:
+* Structured + Unstructured + LLM reasoning
 
-* Translates natural language → data insights
-* Combines structured + unstructured data
-* Performs reasoning, diagnosis, and recommendation
-* Deploys as a scalable cloud service
+### ✅ Chain-of-Reasoning Flow
 
----
+* Root Cause → Recommendation
 
-# 17. Executive Summary
+### ✅ Production-Ready Design
 
-> This system transforms natural language into actionable business insights using a multi-agent AI architecture powered by LangGraph, combining SQL analytics, knowledge retrieval, and intelligent reasoning into a unified decision-support platform.
+* API layer
+* UI layer
+* Containerization
+* Observability
 
 ---
 
-# 18. Author
+## ⚠️ Limitations
 
-**Collaboration: Andre Setiawan & Tyson Sianipar**
-AI Engineering Bootcamp – Final Project
+* No ground-truth accuracy evaluation
+* SQL generation may fail for edge queries
+* RAG depends on document quality
+* No long-term memory / session learning
 
 ---
 
-# License
+## 🔮 Future Improvements
 
-MIT License
+* Add evaluation framework (accuracy scoring)
+* Implement conversation memory (vector memory)
+* Add role-based UI (Business vs Technical mode)
+* Improve SQL validation & safety
+* Add caching layer (Redis)
+* Add dashboard export (PDF / slides)
+
+---
+
+## 👨‍💻 Author
+
+Collaboration By: Andre Setiawan & Tyson Sianipar
+AI Engineering Final Project
+
+---
+
+## 📌 Summary
+
+This project demonstrates a **real-world enterprise AI pattern**:
+
+> From data → insight → diagnosis → recommendation
+> delivered through a **multi-agent system**
+
+---
+
+⭐ If you find this useful, feel free to star the repo!

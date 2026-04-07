@@ -1,11 +1,21 @@
 import re
 import sqlite3
+import time
 from typing import List, Dict, Any
 
 from tools.schema_tools import DATABASE_SCHEMA_TEXT
 
 
-def generate_sql(question: str, llm) -> str:
+def _extract_token_usage(response) -> Dict[str, int]:
+    usage = getattr(response, "response_metadata", {}).get("token_usage", {}) or {}
+    return {
+        "input_tokens": usage.get("prompt_tokens", 0),
+        "output_tokens": usage.get("completion_tokens", 0),
+        "total_tokens": usage.get("total_tokens", 0),
+    }
+
+
+def generate_sql(question: str, llm) -> Dict[str, Any]:
     prompt = f"""
 You are an expert SQLite analytics assistant.
 
@@ -30,8 +40,11 @@ Return only SQL.
 Question:
 {question}
 """
-    raw = llm.invoke(prompt).content.strip()
+    start = time.perf_counter()
+    response = llm.invoke(prompt)
+    elapsed = time.perf_counter() - start
 
+    raw = response.content.strip()
     match = re.search(r"(?is)(select\s+.*?;)", raw)
     if not match:
         raise ValueError(f"Could not extract SQL from model output: {raw}")
@@ -43,23 +56,49 @@ Question:
     if any(x in lowered for x in forbidden):
         raise ValueError("Unsafe SQL detected.")
 
-    return sql_query
+    return {
+        "sql_query": sql_query,
+        "telemetry": {
+            "timing": {
+                "sql_generation_sec": round(elapsed, 4)
+            },
+            "tokens": _extract_token_usage(response),
+            "quality": {
+                "status": "success",
+                "sql_generated": True
+            }
+        }
+    }
 
 
-def run_sql_query(db_path: str, query: str) -> List[Dict[str, Any]]:
+def run_sql_query(db_path: str, query: str) -> Dict[str, Any]:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    start = time.perf_counter()
     try:
         cur = conn.cursor()
         cur.execute(query)
         rows = cur.fetchall()
         result = [dict(row) for row in rows]
-        return result
+        elapsed = time.perf_counter() - start
+        return {
+            "rows": result,
+            "telemetry": {
+                "timing": {
+                    "sql_execution_sec": round(elapsed, 4)
+                },
+                "quality": {
+                    "status": "success",
+                    "sql_executed": True,
+                    "has_results": len(result) > 0
+                }
+            }
+        }
     finally:
         conn.close()
 
 
-def format_sql_result(question: str, sql_query: str, rows: List[Dict[str, Any]], llm) -> str:
+def format_sql_result(question: str, sql_query: str, rows: List[Dict[str, Any]], llm) -> Dict[str, Any]:
     prompt = f"""
 You are a business analyst assistant.
 
@@ -76,4 +115,19 @@ Write a concise but useful answer in plain English.
 If rows are empty, say no matching data was found.
 If relevant, summarize trends and highlight top insights.
 """
-    return llm.invoke(prompt).content
+    start = time.perf_counter()
+    response = llm.invoke(prompt)
+    elapsed = time.perf_counter() - start
+
+    return {
+        "answer": response.content,
+        "telemetry": {
+            "timing": {
+                "answer_formatting_sec": round(elapsed, 4)
+            },
+            "tokens": _extract_token_usage(response),
+            "quality": {
+                "status": "success"
+            }
+        }
+    }

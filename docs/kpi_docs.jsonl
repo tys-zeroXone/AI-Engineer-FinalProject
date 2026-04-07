@@ -1,5 +1,0 @@
-{"content":"KPI: Revenue. A practical revenue proxy in this dataset is the sum of order_items.total_item_value, which combines price and freight value at the item level.", "metadata":{"type":"kpi","name":"revenue"}}
-{"content":"KPI: Late Delivery Rate. This is the percentage of delivered orders where orders.is_late_delivery = 1. It measures fulfillment timeliness.", "metadata":{"type":"kpi","name":"late_delivery_rate"}}
-{"content":"KPI: Average Review Score. This is the average of review_orders.review_score and is a direct measure of customer satisfaction perception.", "metadata":{"type":"kpi","name":"avg_review_score"}}
-{"content":"KPI: Seller Risk. Seller risk can be evaluated using low review score, high late delivery rate, high freight ratio, and sufficient order volume for stability.", "metadata":{"type":"kpi","name":"seller_risk"}}
-{"content":"KPI: Repeat Customer Rate. This can be estimated using the percentage of customers where is_repeat_customer = 1.", "metadata":{"type":"kpi","name":"repeat_customer_rate"}}

@@ -1,12 +1,14 @@
 from typing import TypedDict, List, Dict, Any, Optional
+import time
 
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 
 from agents.sql_agent import SQLAgent
 from agents.rag_agent import RAGAgent
 from agents.rootcause_agent import RootCauseAgent
 from agents.recommendation_agent import RecommendationAgent
+
 
 class GraphState(TypedDict, total=False):
     question: str
@@ -52,6 +54,8 @@ class SupervisorAgent:
         self.graph = self._build_graph()
 
     def _route_question(self, state: GraphState) -> GraphState:
+        start = time.perf_counter()
+
         question = state["question"]
         history = state.get("history", [])
 
@@ -82,40 +86,68 @@ Conversation History:
 Question:
 {question}
 """
-        route = self.router_llm.invoke(prompt).content.strip().lower()
+        response = self.router_llm.invoke(prompt)
+        route = response.content.strip().lower()
         if route not in {"sql", "rag", "rootcause", "recommendation"}:
             route = "sql"
 
-        return {**state, "route": route}
+        usage = getattr(response, "response_metadata", {}).get("token_usage", {}) or {}
+        elapsed = time.perf_counter() - start
+
+        return {
+            **state,
+            "route": route,
+            "debug": {
+                "supervisor_telemetry": {
+                    "routing": {
+                        "selected_route": route,
+                        "routing_latency_sec": round(elapsed, 4),
+                    },
+                    "tokens": {
+                        "input_tokens": usage.get("prompt_tokens", 0),
+                        "output_tokens": usage.get("completion_tokens", 0),
+                        "total_tokens": usage.get("total_tokens", 0),
+                    },
+                    "quality": {
+                        "status": "success",
+                        "route_valid": route in {"sql", "rag", "rootcause", "recommendation"}
+                    }
+                }
+            }
+        }
 
     def _route_edges(self, state: GraphState) -> str:
         return state["route"]
 
     def _sql_node(self, state: GraphState) -> GraphState:
         result = self.sql_agent.run(state["question"], state.get("history", []))
+        merged_debug = {**state.get("debug", {}), **result.get("debug", {})}
         return {
             **state,
             "answer": result["answer"],
             "selected_agent": "SQLAgent",
-            "debug": result.get("debug", {})
+            "debug": merged_debug
         }
 
     def _rag_node(self, state: GraphState) -> GraphState:
         result = self.rag_agent.run(state["question"], state.get("history", []))
+        merged_debug = {**state.get("debug", {}), **result.get("debug", {})}
         return {
             **state,
             "answer": result["answer"],
             "selected_agent": "RAGAgent",
-            "debug": result.get("debug", {})
+            "debug": merged_debug
         }
 
     def _rootcause_node(self, state: GraphState) -> GraphState:
         result = self.rootcause_agent.run(state["question"], state.get("history", []))
+        merged_debug = {**state.get("debug", {}), **result.get("debug", {})}
         return {
             **state,
             "rootcause_answer": result["answer"],
             "rootcause_debug": result.get("debug", {}),
-            "selected_agent": "RootCauseAgent"
+            "selected_agent": "RootCauseAgent",
+            "debug": merged_debug
         }
 
     def _recommendation_node(self, state: GraphState) -> GraphState:
@@ -139,17 +171,18 @@ Based on the root-cause findings above, provide prioritized recommendations.
             state.get("history", [])
         )
 
-        combined_debug = result.get("debug", {})
+        merged_debug = {**state.get("debug", {}), **result.get("debug", {})}
+
         if state.get("rootcause_debug"):
-            combined_debug["rootcause_debug"] = state["rootcause_debug"]
+            merged_debug["rootcause_chain"] = state["rootcause_debug"]
 
         return {
             **state,
             "answer": result["answer"],
             "selected_agent": "RecommendationAgent"
-                              if not state.get("rootcause_answer")
-                              else "RootCauseAgent -> RecommendationAgent",
-            "debug": combined_debug
+            if not state.get("rootcause_answer")
+            else "RootCauseAgent -> RecommendationAgent",
+            "debug": merged_debug
         }
 
     def _build_graph(self):
@@ -182,14 +215,25 @@ Based on the root-cause findings above, provide prioritized recommendations.
         return workflow.compile()
 
     def run(self, question: str, history: List[Dict[str, str]]) -> Dict[str, Any]:
+        total_start = time.perf_counter()
+
         state: GraphState = {
             "question": question,
             "history": history or [],
         }
         result = self.graph.invoke(state)
 
+        total_elapsed = time.perf_counter() - total_start
+        debug = result.get("debug", {}) or {}
+
+        supervisor_debug = debug.get("supervisor_telemetry", {})
+        supervisor_debug["request"] = {
+            "total_request_latency_sec": round(total_elapsed, 4)
+        }
+        debug["supervisor_telemetry"] = supervisor_debug
+
         return {
             "answer": result.get("answer", "No answer generated."),
             "selected_agent": result.get("selected_agent", result.get("route", "unknown")),
-            "debug": result.get("debug", {})
+            "debug": debug
         }
