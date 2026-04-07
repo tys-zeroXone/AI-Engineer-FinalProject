@@ -1,5 +1,7 @@
 import os
 import json
+import base64
+import hashlib
 from io import BytesIO
 
 import requests
@@ -7,6 +9,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
 from openai import OpenAI
+from requests.exceptions import ChunkedEncodingError, RequestException
 
 load_dotenv()
 
@@ -81,11 +84,55 @@ st.markdown(
         40% { opacity: 1; }
     }
 
-    .audio-help {
+    .input-help {
         color: #6B7280;
         font-size: 0.82rem;
         margin-top: 0.35rem;
         margin-bottom: 0.75rem;
+    }
+
+    /* Simplify uploader appearance */
+    div[data-testid="stFileUploader"] section {
+        padding: 0 !important;
+        border: none !important;
+        background: transparent !important;
+    }
+
+    div[data-testid="stFileUploaderDropzone"] {
+        min-height: auto !important;
+        padding: 0 !important;
+        border: none !important;
+        background: transparent !important;
+    }
+
+    div[data-testid="stFileUploaderDropzoneInstructions"] {
+        display: none !important;
+    }
+
+    div[data-testid="stFileUploader"] small {
+        display: none !important;
+    }
+
+    div[data-testid="stFileUploader"] button[kind="secondary"] {
+        width: 100% !important;
+        min-height: 42px !important;
+        height: 42px !important;
+        border-radius: 12px !important;
+        padding-top: 0.45rem !important;
+        padding-bottom: 0.45rem !important;
+        white-space: nowrap !important;
+    }
+
+    div[data-testid="stFileUploaderFile"] {
+        margin-top: 0.35rem;
+    }
+
+    div[data-testid="stAudioInput"] {
+        min-height: 42px !important;
+    }
+
+    div[data-testid="stAudioInput"] > div {
+        min-height: 42px !important;
     }
     </style>
     """,
@@ -174,6 +221,12 @@ if "question_input_box" not in st.session_state:
 if "pending_input_fill" not in st.session_state:
     st.session_state.pending_input_fill = None
 
+if "pending_input_source" not in st.session_state:
+    st.session_state.pending_input_source = None
+
+if "active_input_source" not in st.session_state:
+    st.session_state.active_input_source = None
+
 if "focus_input" not in st.session_state:
     st.session_state.focus_input = False
 
@@ -186,12 +239,22 @@ if "voice_error" not in st.session_state:
 if "last_audio_signature" not in st.session_state:
     st.session_state.last_audio_signature = None
 
+if "image_error" not in st.session_state:
+    st.session_state.image_error = ""
+
+if "last_image_hash" not in st.session_state:
+    st.session_state.last_image_hash = None
+
+if "image_uploader_version" not in st.session_state:
+    st.session_state.image_uploader_version = 0
+
 
 # ----------------------------
 # Helpers
 # ----------------------------
 def set_prompt(prompt_text: str):
     st.session_state.question_input_box = prompt_text
+    st.session_state.active_input_source = None
     st.session_state.focus_input = True
     st.rerun()
 
@@ -215,6 +278,21 @@ def focus_input():
         st.session_state.focus_input = False
 
 
+def call_non_stream_api(question, history):
+    payload = {
+        "question": question,
+        "history": history,
+    }
+
+    response = requests.post(
+        API_URL,
+        json=payload,
+        timeout=180,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 def stream_api(question, history):
     payload = {
         "question": question,
@@ -227,17 +305,29 @@ def stream_api(question, history):
     else:
         stream_url = stream_url.replace("/chat/", "/chat/stream/")
 
-    response = requests.post(
-        stream_url,
-        json=payload,
-        stream=True,
-        timeout=180,
-    )
-    response.raise_for_status()
+    try:
+        response = requests.post(
+            stream_url,
+            json=payload,
+            stream=True,
+            timeout=180,
+        )
+        response.raise_for_status()
 
-    for line in response.iter_lines():
-        if line:
-            yield line.decode("utf-8")
+        for line in response.iter_lines():
+            if line:
+                yield line.decode("utf-8")
+
+    except (ChunkedEncodingError, RequestException, json.JSONDecodeError):
+        fallback = call_non_stream_api(question, history)
+        yield json.dumps(
+            {
+                "type": "done",
+                "answer": fallback.get("answer", "No answer returned."),
+                "selected_agent": fallback.get("selected_agent", "Unknown"),
+                "debug": fallback.get("debug", {}),
+            }
+        )
 
 
 def build_history_from_conversations(conversations, max_pairs=10):
@@ -291,7 +381,7 @@ def process_prompt_streaming(prompt_text: str, answer_placeholder, status_placeh
         status_placeholder.empty()
 
     completed_chat = {
-        "question": prompt_text,
+        "question": st.session_state.get("last_display_question", prompt_text),
         "answer": streamed_text,
         "agent": selected_agent,
         "debug": debug,
@@ -302,6 +392,8 @@ def process_prompt_streaming(prompt_text: str, answer_placeholder, status_placeh
     st.session_state.clear_input_on_next_run = True
     st.session_state.focus_input = True
     st.session_state.voice_error = ""
+    st.session_state.image_error = ""
+    st.session_state.active_input_source = None
 
 
 def transcribe_audio_file(audio_file) -> str:
@@ -325,6 +417,67 @@ def transcribe_audio_file(audio_file) -> str:
     return (getattr(transcript, "text", "") or "").strip()
 
 
+def image_to_data_url(image_file) -> str:
+    image_bytes = image_file.getvalue()
+    mime_type = getattr(image_file, "type", None) or "image/png"
+    encoded = base64.b64encode(image_bytes).decode("utf-8")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def extract_text_from_review_screenshot(image_file) -> str:
+    if image_file is None:
+        return ""
+
+    if openai_client is None:
+        raise RuntimeError("OPENAI_API_KEY is not configured.")
+
+    data_url = image_to_data_url(image_file)
+
+    response = openai_client.responses.create(
+        model="gpt-4.1-mini",
+        input=[
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "You extract text from e-commerce complaint or review screenshots. "
+                            "Return only the readable text from the screenshot, preserving line breaks where helpful. "
+                            "Do not summarize. Do not explain. Do not add labels."
+                        ),
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "Extract all complaint/review text from this screenshot."},
+                    {"type": "input_image", "image_url": data_url},
+                ],
+            },
+        ],
+    )
+
+    return (response.output_text or "").strip()
+
+
+def build_backend_question(visible_question: str) -> str:
+    if st.session_state.active_input_source == "image_review":
+        return f"""Analyze the following review text.
+
+Review text:
+\"\"\"{visible_question}\"\"\"
+
+Return:
+1. English translation
+2. Sentiment analysis based on the English translation
+
+Keep the answer concise and clear.
+"""
+    return visible_question
+
+
 def audio_signature(audio_file):
     if audio_file is None:
         return None
@@ -332,6 +485,14 @@ def audio_signature(audio_file):
     file_name = getattr(audio_file, "name", "audio")
     file_size = len(audio_file.getvalue())
     return f"{file_name}:{file_size}"
+
+
+def image_signature(image_file):
+    if image_file is None:
+        return None
+
+    image_bytes = image_file.getvalue()
+    return hashlib.sha256(image_bytes).hexdigest()
 
 
 def process_audio_input(audio_file):
@@ -351,11 +512,41 @@ def process_audio_input(audio_file):
 
         st.session_state.last_audio_signature = signature
         st.session_state.pending_input_fill = transcript_text
+        st.session_state.pending_input_source = "audio"
         st.session_state.voice_error = ""
         st.rerun()
 
     except Exception as e:
         st.session_state.voice_error = f"Audio transcription failed: {e}"
+
+
+def process_image_input(image_file):
+    if image_file is None:
+        return
+
+    signature = image_signature(image_file)
+    if signature == st.session_state.last_image_hash:
+        return
+
+    try:
+        with st.spinner("Extracting text from screenshot..."):
+            extracted_text = extract_text_from_review_screenshot(image_file)
+
+        if not extracted_text:
+            st.session_state.image_error = "No readable text detected in the screenshot."
+            return
+
+        st.session_state.last_image_hash = signature
+        st.session_state.pending_input_fill = extracted_text
+        st.session_state.pending_input_source = "image_review"
+        st.session_state.image_error = ""
+
+        # Reset uploader so next upload is always treated as new
+        st.session_state.image_uploader_version += 1
+        st.rerun()
+
+    except Exception as e:
+        st.session_state.image_error = f"Image text extraction failed: {e}"
 
 
 def render_sidebar_section_header(theme_key: str):
@@ -569,16 +760,18 @@ def render_debug_panel(debug):
             st.json(rootcause_chain)
 
 
-def render_chat_exchange(question_text: str):
+def render_chat_exchange(display_question_text: str, backend_question_text: str):
+    st.session_state.last_display_question = display_question_text
+
     with st.chat_message("user"):
-        st.markdown(question_text)
+        st.markdown(display_question_text)
 
     with st.chat_message("assistant"):
         answer_placeholder = st.empty()
         status_placeholder = st.empty()
 
         process_prompt_streaming(
-            question_text,
+            backend_question_text,
             answer_placeholder=answer_placeholder,
             status_placeholder=status_placeholder,
         )
@@ -643,10 +836,12 @@ with chat_col:
 
     if st.session_state.pending_input_fill is not None:
         st.session_state.question_input_box = st.session_state.pending_input_fill
+        st.session_state.active_input_source = st.session_state.pending_input_source
         st.session_state.pending_input_fill = None
+        st.session_state.pending_input_source = None
         st.session_state.focus_input = True
 
-    input_col, audio_col = st.columns([6.2, 1.35], gap="small")
+    input_col, audio_col, image_col = st.columns([6.0, 1.2, 1.5], gap="small")
 
     with input_col:
         with st.form("question_form", clear_on_submit=False):
@@ -665,8 +860,17 @@ with chat_col:
             label_visibility="collapsed",
         )
 
+    with image_col:
+        image_input = st.file_uploader(
+            "Browse files",
+            type=["png", "jpg", "jpeg", "webp"],
+            accept_multiple_files=False,
+            key=f"review_screenshot_input_{st.session_state.image_uploader_version}",
+            label_visibility="collapsed",
+        )
+
     st.markdown(
-        "<div class='audio-help'>Record with the mic button. When you stop recording, the transcript will be inserted into the input box. Press Enter to submit.</div>",
+        "<div class='input-help'>Use the mic button for voice input or upload a review screenshot. The extracted text will be inserted into the input box. Press Enter to submit.</div>",
         unsafe_allow_html=True,
     )
 
@@ -675,12 +879,19 @@ with chat_col:
     if audio_input is not None:
         process_audio_input(audio_input)
 
+    if image_input is not None:
+        process_image_input(image_input)
+
     if st.session_state.voice_error:
         st.error(st.session_state.voice_error)
 
+    if st.session_state.image_error:
+        st.error(st.session_state.image_error)
+
     if submitted and question.strip():
-        current_prompt = question.strip()
-        render_chat_exchange(current_prompt)
+        visible_question = question.strip()
+        backend_question = build_backend_question(visible_question)
+        render_chat_exchange(visible_question, backend_question)
         st.rerun()
 
     if st.session_state.conversations:
