@@ -1,33 +1,48 @@
 # 🛒 Olist Commerce Intelligence Copilot
 
-**Multi-Agent AI System for E-commerce Analytics & Decision Support**
+### Multi-Agent AI System for E-commerce Analytics, Diagnostics & Decision Support
 
 ---
 
-## 📌 Overview
+## 🚀 Executive Summary
 
-This project implements a **multi-agent AI system** designed to help business users analyze, diagnose, and improve e-commerce marketplace performance.
+This project delivers a **production-ready multi-agent AI system** that enables business users to:
 
-It combines:
+* Ask natural language questions about marketplace performance
+* Diagnose operational issues (e.g., late delivery, low reviews)
+* Receive **data-driven, consulting-style recommendations**
+
+The system integrates:
 
 * **Structured analytics (SQL)**
-* **Knowledge retrieval (RAG)**
-* **Diagnostic reasoning (Root Cause)**
-* **Strategic recommendations (Consulting-style AI)**
+* **Semantic retrieval (RAG via Qdrant)**
+* **Diagnostic reasoning (Root Cause Agent)**
+* **Strategic recommendations (LLM-driven)**
 
-All orchestrated using a **Supervisor Agent (LangGraph)**.
+All orchestrated through a **Supervisor Agent using LangGraph**.
+
+---
+
+## 🎯 Business Value
+
+| Capability                | Business Impact                         |
+| ------------------------- | --------------------------------------- |
+| Natural Language Querying | Eliminates dependency on SQL / BI tools |
+| Root Cause Analysis       | Faster issue diagnosis                  |
+| Recommendation Engine     | Actionable decision support             |
+| Multi-Agent Orchestration | Scalable enterprise AI architecture     |
 
 ---
 
 ## 🎯 Key Objective
 
-Enable business stakeholders to ask natural language questions like:
+Enable stakeholders to ask:
 
 * *“What are the top product categories by revenue?”*
 * *“Why are review scores low?”*
 * *“What actions should we prioritize?”*
 
-…and receive **data-driven insights and recommendations**.
+…and receive **end-to-end insights → diagnosis → strategy**
 
 ---
 
@@ -36,7 +51,7 @@ Enable business stakeholders to ask natural language questions like:
 ```
 User (Streamlit UI)
         ↓
-FastAPI Backend (/chat)
+FastAPI Backend (/chat, /chat/stream)
         ↓
 Supervisor Agent (LangGraph)
         ↓
@@ -45,54 +60,50 @@ Supervisor Agent (LangGraph)
  │ (SQLite)   │ (Qdrant)      │ (Diagnostics) │ (Strategy)    │
  └────────────┴──────────────┴──────────────┴──────────────┘
         ↓
-Final LLM Response
+Final LLM Response (Streaming)
 ```
 
 ---
 
 ## 🧩 Core Components
 
-### 1. Supervisor Agent (Orchestration)
+### 1. Supervisor Agent (Orchestration & Routing)
 
-* Routes user queries to the appropriate agent
-* Supports multi-step flow:
+* Routes user queries to the correct agent
+* Supports multi-step reasoning:
 
   * **Root Cause → Recommendation**
+* Built using **LangGraph**
 
 ---
 
 ### 2. SQL Agent (Structured Analytics)
 
 * Converts natural language → SQL query
-* Executes query on SQLite database
+* Executes queries on SQLite
 * Returns business insights
 
 **Example:**
 
-> “Top 5 categories by revenue”
+> “Top 5 product categories by revenue”
 
 ---
 
 ### 3. RAG Agent (Knowledge Retrieval)
 
 * Uses **Qdrant vector database**
-* Retrieves business definitions & documentation
-* Answers conceptual questions
+* Retrieves:
 
-**Example:**
-
-> “What is late delivery?”
+  * KPI definitions
+  * Business glossary
+  * Schema documentation
 
 ---
 
 ### 4. Root Cause Agent (Diagnostics)
 
-* Runs multiple analytical queries
-* Identifies drivers of business issues
-
-**Example:**
-
-> “Why are review scores low?”
+* Executes multiple analytical queries
+* Identifies drivers of issues
 
 ---
 
@@ -100,7 +111,7 @@ Final LLM Response
 
 * Combines:
 
-  * Analytics context
+  * Analytics results
   * Retrieved knowledge
   * LLM reasoning
 
@@ -110,6 +121,24 @@ Outputs:
 * Implications
 * Prioritized actions
 * Executive summary
+
+---
+
+## 🔊 Voice Input Feature (Latest UX)
+
+The system supports **voice-based interaction integrated into the input box**.
+
+### Flow:
+
+```
+🎙️ Record → Stop → Transcribe → Auto-fill input → Press Enter → Execute
+```
+
+### Implementation:
+
+* `st.audio_input()` (Streamlit)
+* OpenAI transcription (`gpt-4o-mini-transcribe`)
+* Streamlit session-state lifecycle (safe pattern)
 
 ---
 
@@ -155,39 +184,63 @@ project/
 │   └── kpi_docs.jsonl
 │
 ├── setup_qdrant.py
-├── main.py (FastAPI)
-├── streamlitapp.py
+├── main.py                # FastAPI backend
+├── streamlitapp.py       # UI (text + voice input)
 ├── docker-compose.yaml
+├── Dockerfile
+├── requirements.txt
+├── pyproject.toml
 └── README.md
 ```
 
 ---
 
-## 🚀 Getting Started
+## 🔄 API Endpoints
 
-### 1. Clone Repository
+### Health Check
+
+```
+GET /
+```
+
+### Standard Chat
+
+```
+POST /chat/
+```
+
+### Streaming Chat (Primary)
+
+```
+POST /chat/stream/
+```
+
+Format:
+
+```
+application/x-ndjson
+```
+
+Supports real-time token streaming 
+
+---
+
+## 🐳 Docker Deployment (Recommended)
 
 ```bash
-git clone <repo-url>
-cd <project-folder>
+docker-compose up --build
 ```
+
+Services:
+
+* API → http://localhost:8000
+* UI → http://localhost:8501
 
 ---
 
-### 2. Setup Environment
+## 🛠️ Local Development Setup
 
-Create `.env` file:
-
-```env
-OPENAI_API_KEY=your_api_key
-QDRANT_URL=your_qdrant_url
-QDRANT_API_KEY=your_qdrant_api_key
-DB_PATH=data/Olist_Database.db
-```
-
----
-
-### 3. Install Dependencies
+### 1. Install Dependencies
 
 ```bash
 poetry install
@@ -201,46 +254,44 @@ pip install -r requirements.txt
 
 ---
 
-### 4. Setup Vector Database (Qdrant)
+### 2. Environment Variables
 
-```bash
-poetry run python setup_qdrant.py
-```
+Create `.env`:
 
-This will:
-
-* Load documents from `/docs`
-* Generate embeddings
-* Store into Qdrant collection
-
----
-
-### 5. Run Backend (FastAPI)
-
-```bash
-poetry run uvicorn main:app --reload --port 8000
+```env
+OPENAI_API_KEY=your_key
+QDRANT_URL=your_qdrant_url
+QDRANT_API_KEY=your_key
+QDRANT_COLLECTION=olist_docs
+SQLITE_DB_PATH=data/Olist_Database.db
+API_URL=http://localhost:8000/chat/
 ```
 
 ---
 
-### 6. Run Frontend (Streamlit)
+### 3. Initialize Vector Database
+
+```bash
+python setup_qdrant.py
+```
+
+Loads documents into Qdrant
+
+---
+
+### 4. Run Backend
+
+```bash
+uvicorn main:app --reload --port 8000
+```
+
+---
+
+### 5. Run Frontend
 
 ```bash
 streamlit run streamlitapp.py
 ```
-
----
-
-## 🐳 Docker Setup (Recommended)
-
-```bash
-docker-compose up --build
-```
-
-Services:
-
-* FastAPI → `localhost:8000`
-* Streamlit → `localhost:8501`
 
 ---
 
@@ -270,78 +321,84 @@ Services:
 
 ## 📊 Observability & Telemetry
 
-The system includes a dedicated **Observability Panel**:
+The system includes a **dedicated Observability Panel**:
 
-### Metrics tracked:
+Tracked metrics:
 
-* Latency (routing, execution, total)
-* Token usage (input/output)
-* SQL query & execution time
+* Routing latency
+* SQL execution time
+* Token usage
 * Retrieved documents
-* Diagnostic queries
+* Diagnostic outputs
 * Recommendation pipeline
 
-⚠️ Note:
-“Accuracy” shown is **execution quality**, not ground-truth correctness.
+⚠️ Note: Accuracy shown reflects execution quality, not ground-truth evaluation.
 
 ---
 
-## 🧠 Key Design Highlights
+## 🧠 Design Principles
 
-### ✅ Multi-Agent Architecture
+### ✅ Multi-Agent Modularity
 
-* Specialized agents for different problem types
+Each agent solves a specific class of problem
 
 ### ✅ Hybrid Intelligence
 
-* Structured + Unstructured + LLM reasoning
+Combines:
 
-### ✅ Chain-of-Reasoning Flow
+* Structured data
+* Unstructured knowledge
+* LLM reasoning
 
-* Root Cause → Recommendation
+### ✅ Streaming UX
 
-### ✅ Production-Ready Design
+Real-time response generation
 
-* API layer
+### ✅ Production-Ready Architecture
+
+* API layer separation
 * UI layer
-* Containerization
-* Observability
+* Dockerized deployment
+* Environment-driven configuration
 
 ---
 
 ## ⚠️ Limitations
 
-* No ground-truth accuracy evaluation
-* SQL generation may fail for edge queries
+* No ground-truth evaluation framework
+* SQL generation may fail on edge cases
 * RAG depends on document quality
-* No long-term memory / session learning
+* No long-term conversational memory
 
 ---
 
-## 🔮 Future Improvements
+## 🔮 Future Enhancements
 
-* Add evaluation framework (accuracy scoring)
-* Implement conversation memory (vector memory)
-* Add role-based UI (Business vs Technical mode)
-* Improve SQL validation & safety
-* Add caching layer (Redis)
-* Add dashboard export (PDF / slides)
+* Evaluation framework (accuracy scoring)
+* Memory layer (vector conversation memory)
+* Role-based UI (business vs technical mode)
+* SQL validation & guardrails
+* Redis caching layer
+* Export to dashboard / slides
 
 ---
 
-## 👨‍💻 Author
+## 👨‍💻 Authors
 
-Collaboration By: Andre Setiawan & Tyson Sianipar
+**Tyson Sianipar**
+**Andre Setiawan**
+
 AI Engineering Final Project
 
 ---
 
-## 📌 Summary
+## ⭐ Summary
 
 This project demonstrates a **real-world enterprise AI pattern**:
 
-> From data → insight → diagnosis → recommendation
-> delivered through a **multi-agent system**
+> **Data → Insight → Diagnosis → Recommendation**
+
+Delivered through a **multi-agent architecture with LLM orchestration**
 
 ---
 

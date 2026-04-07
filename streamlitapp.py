@@ -1,9 +1,19 @@
 import os
 import json
+from io import BytesIO
+
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
 
 API_URL = os.getenv("API_URL", "http://localhost:8000/chat/")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 st.set_page_config(page_title="Olist Multi-Agent Assistant", layout="wide")
 
@@ -21,6 +31,10 @@ st.markdown(
         background: #FFFFFF;
     }
 
+    div[data-testid="stFormSubmitButton"] {
+        display: none;
+    }
+
     .agent-tag {
         display: inline-block;
         padding: 6px 12px;
@@ -32,11 +46,6 @@ st.markdown(
         border: 1px solid rgba(0,0,0,0.06);
     }
 
-    .status-text {
-        color: #9CA3AF;
-        font-size: 0.92rem;
-    }
-
     .section-label {
         color: #6B7280;
         font-size: 0.82rem;
@@ -45,11 +54,6 @@ st.markdown(
         letter-spacing: 0.04em;
         margin-top: 0.25rem;
         margin-bottom: 0.5rem;
-    }
-
-    .section-spacer {
-        margin-top: 0.5rem;
-        margin-bottom: 0.25rem;
     }
 
     .typing {
@@ -76,6 +80,13 @@ st.markdown(
         0%, 80%, 100% { opacity: 0.2; }
         40% { opacity: 1; }
     }
+
+    .audio-help {
+        color: #6B7280;
+        font-size: 0.82rem;
+        margin-top: 0.35rem;
+        margin-bottom: 0.75rem;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -85,9 +96,6 @@ st.title("🛒 Olist Commerce Intelligence Copilot")
 st.caption("Ask business questions about sales, delivery, reviews, sellers, products, and recommendations.")
 
 
-# ----------------------------
-# Theme
-# ----------------------------
 AGENT_THEME = {
     "sql": {
         "bg": "#E8F1FB",
@@ -126,10 +134,6 @@ AGENT_THEME = {
     },
 }
 
-
-# ----------------------------
-# Sample prompts
-# ----------------------------
 SQL_SAMPLES = [
     "What are the top 5 product categories by revenue?",
     "Compare seller performance by review score and late delivery rate.",
@@ -164,18 +168,51 @@ if "conversations" not in st.session_state:
 if "last_debug" not in st.session_state:
     st.session_state.last_debug = {}
 
-if "draft_prompt" not in st.session_state:
-    st.session_state.draft_prompt = ""
+if "question_input_box" not in st.session_state:
+    st.session_state.question_input_box = ""
 
-if "active_chat" not in st.session_state:
-    st.session_state.active_chat = None
+if "pending_input_fill" not in st.session_state:
+    st.session_state.pending_input_fill = None
+
+if "focus_input" not in st.session_state:
+    st.session_state.focus_input = False
+
+if "clear_input_on_next_run" not in st.session_state:
+    st.session_state.clear_input_on_next_run = False
+
+if "voice_error" not in st.session_state:
+    st.session_state.voice_error = ""
+
+if "last_audio_signature" not in st.session_state:
+    st.session_state.last_audio_signature = None
 
 
 # ----------------------------
 # Helpers
 # ----------------------------
 def set_prompt(prompt_text: str):
-    st.session_state.draft_prompt = prompt_text
+    st.session_state.question_input_box = prompt_text
+    st.session_state.focus_input = True
+    st.rerun()
+
+
+def focus_input():
+    if st.session_state.focus_input:
+        components.html(
+            """
+            <script>
+                const doc = window.parent.document;
+                const input = doc.querySelector('input[type="text"]');
+                if (input) {
+                    input.focus();
+                    const len = input.value.length;
+                    input.setSelectionRange(len, len);
+                }
+            </script>
+            """,
+            height=0,
+        )
+        st.session_state.focus_input = False
 
 
 def stream_api(question, history):
@@ -237,19 +274,12 @@ def process_prompt_streaming(prompt_text: str, answer_placeholder, status_placeh
             if data.get("type") == "token":
                 streamed_text = data.get("content", "")
                 answer_placeholder.markdown(streamed_text + "▌")
-                if st.session_state.active_chat is not None:
-                    st.session_state.active_chat["answer"] = streamed_text
 
             elif data.get("type") == "done":
                 streamed_text = data.get("answer", streamed_text)
                 selected_agent = data.get("selected_agent", "Unknown")
                 debug = data.get("debug", {})
                 answer_placeholder.markdown(streamed_text)
-
-                if st.session_state.active_chat is not None:
-                    st.session_state.active_chat["answer"] = streamed_text
-                    st.session_state.active_chat["agent"] = selected_agent
-                    st.session_state.active_chat["debug"] = debug
 
         status_placeholder.empty()
 
@@ -260,11 +290,6 @@ def process_prompt_streaming(prompt_text: str, answer_placeholder, status_placeh
         answer_placeholder.markdown(streamed_text)
         status_placeholder.empty()
 
-        if st.session_state.active_chat is not None:
-            st.session_state.active_chat["answer"] = streamed_text
-            st.session_state.active_chat["agent"] = selected_agent
-            st.session_state.active_chat["debug"] = debug
-
     completed_chat = {
         "question": prompt_text,
         "answer": streamed_text,
@@ -274,8 +299,63 @@ def process_prompt_streaming(prompt_text: str, answer_placeholder, status_placeh
 
     st.session_state.conversations.append(completed_chat)
     st.session_state.last_debug = debug
-    st.session_state.draft_prompt = ""
-    st.session_state.active_chat = None
+    st.session_state.clear_input_on_next_run = True
+    st.session_state.focus_input = True
+    st.session_state.voice_error = ""
+
+
+def transcribe_audio_file(audio_file) -> str:
+    if audio_file is None:
+        return ""
+
+    if openai_client is None:
+        raise RuntimeError("OPENAI_API_KEY is not configured.")
+
+    audio_bytes = audio_file.getvalue()
+    file_name = getattr(audio_file, "name", "voice_input.wav")
+
+    buffer = BytesIO(audio_bytes)
+    buffer.name = file_name
+
+    transcript = openai_client.audio.transcriptions.create(
+        model="gpt-4o-mini-transcribe",
+        file=buffer,
+    )
+
+    return (getattr(transcript, "text", "") or "").strip()
+
+
+def audio_signature(audio_file):
+    if audio_file is None:
+        return None
+
+    file_name = getattr(audio_file, "name", "audio")
+    file_size = len(audio_file.getvalue())
+    return f"{file_name}:{file_size}"
+
+
+def process_audio_input(audio_file):
+    if audio_file is None:
+        return
+
+    signature = audio_signature(audio_file)
+    if signature == st.session_state.last_audio_signature:
+        return
+
+    try:
+        transcript_text = transcribe_audio_file(audio_file)
+
+        if not transcript_text:
+            st.session_state.voice_error = "No speech detected. Please try again."
+            return
+
+        st.session_state.last_audio_signature = signature
+        st.session_state.pending_input_fill = transcript_text
+        st.session_state.voice_error = ""
+        st.rerun()
+
+    except Exception as e:
+        st.session_state.voice_error = f"Audio transcription failed: {e}"
 
 
 def render_sidebar_section_header(theme_key: str):
@@ -455,7 +535,7 @@ def render_quality(agent):
     st.write(note)
 
 
-def render_debug_panel(debug, show_full_debug=False):
+def render_debug_panel(debug):
     render_supervisor_telemetry(debug)
 
     st.divider()
@@ -488,10 +568,24 @@ def render_debug_panel(debug, show_full_debug=False):
         with st.expander("Root Cause Chain Details", expanded=False):
             st.json(rootcause_chain)
 
-    if show_full_debug:
-        st.divider()
-        with st.expander("Full Debug JSON", expanded=False):
-            st.json(debug)
+
+def render_chat_exchange(question_text: str):
+    with st.chat_message("user"):
+        st.markdown(question_text)
+
+    with st.chat_message("assistant"):
+        answer_placeholder = st.empty()
+        status_placeholder = st.empty()
+
+        process_prompt_streaming(
+            question_text,
+            answer_placeholder=answer_placeholder,
+            status_placeholder=status_placeholder,
+        )
+
+        render_agent_tag(st.session_state.conversations[-1].get("agent", "Unknown"))
+
+    st.divider()
 
 
 # ----------------------------
@@ -528,7 +622,6 @@ with st.sidebar:
     st.divider()
     st.subheader("View Options")
     show_debug_panel = st.toggle("Show telemetry panel", value=True)
-    show_full_debug = st.toggle("Show raw debug JSON", value=False)
 
 
 # ----------------------------
@@ -544,64 +637,64 @@ else:
 with chat_col:
     st.subheader("Conversation")
 
-    with st.form("question_form", clear_on_submit=False):
-        col_input, col_button = st.columns([10, 1])
-        with col_input:
+    if st.session_state.clear_input_on_next_run:
+        st.session_state.question_input_box = ""
+        st.session_state.clear_input_on_next_run = False
+
+    if st.session_state.pending_input_fill is not None:
+        st.session_state.question_input_box = st.session_state.pending_input_fill
+        st.session_state.pending_input_fill = None
+        st.session_state.focus_input = True
+
+    input_col, audio_col = st.columns([6.2, 1.35], gap="small")
+
+    with input_col:
+        with st.form("question_form", clear_on_submit=False):
             question = st.text_input(
                 "Ask a question",
-                value=st.session_state.draft_prompt,
+                key="question_input_box",
                 placeholder="Ask about sales, delivery, reviews, sellers, products, or business recommendations",
                 label_visibility="collapsed",
             )
-        with col_button:
-            submitted = st.form_submit_button("Ask", use_container_width=True)
+            submitted = st.form_submit_button("Submit")
 
-    if submitted and question.strip() and st.session_state.active_chat is None:
-        st.session_state.active_chat = {
-            "question": question.strip(),
-            "answer": "",
-            "agent": None,
-            "debug": {},
-        }
+    with audio_col:
+        audio_input = st.audio_input(
+            "Record",
+            key="voice_question_input",
+            label_visibility="collapsed",
+        )
 
-    active_container = st.container()
-    history_container = st.container()
+    st.markdown(
+        "<div class='audio-help'>Record with the mic button. When you stop recording, the transcript will be inserted into the input box. Press Enter to submit.</div>",
+        unsafe_allow_html=True,
+    )
 
-    with active_container:
-        if st.session_state.active_chat is not None:
-            render_section_label("Active Conversation")
+    focus_input()
 
+    if audio_input is not None:
+        process_audio_input(audio_input)
+
+    if st.session_state.voice_error:
+        st.error(st.session_state.voice_error)
+
+    if submitted and question.strip():
+        current_prompt = question.strip()
+        render_chat_exchange(current_prompt)
+        st.rerun()
+
+    if st.session_state.conversations:
+        render_section_label("Recent History")
+
+        for convo in reversed(st.session_state.conversations):
             with st.chat_message("user"):
-                st.markdown(st.session_state.active_chat["question"])
+                st.markdown(convo["question"])
 
             with st.chat_message("assistant"):
-                answer_placeholder = st.empty()
-                status_placeholder = st.empty()
-
-                process_prompt_streaming(
-                    st.session_state.active_chat["question"],
-                    answer_placeholder=answer_placeholder,
-                    status_placeholder=status_placeholder,
-                )
-
-                render_agent_tag(st.session_state.conversations[-1].get("agent", "Unknown"))
+                st.markdown(convo["answer"])
+                render_agent_tag(convo.get("agent", "Unknown"))
 
             st.divider()
-            st.rerun()
-
-    with history_container:
-        if st.session_state.conversations:
-            render_section_label("Recent History")
-
-            for convo in reversed(st.session_state.conversations):
-                with st.chat_message("user"):
-                    st.markdown(convo["question"])
-
-                with st.chat_message("assistant"):
-                    st.markdown(convo["answer"])
-                    render_agent_tag(convo.get("agent", "Unknown"))
-
-                st.divider()
 
 
 if show_debug_panel and debug_col is not None:
@@ -610,9 +703,6 @@ if show_debug_panel and debug_col is not None:
         st.caption("Technical telemetry is separated from the main conversation for a cleaner end-user experience.")
 
         if st.session_state.last_debug:
-            render_debug_panel(
-                st.session_state.last_debug,
-                show_full_debug=show_full_debug,
-            )
+            render_debug_panel(st.session_state.last_debug)
         else:
             st.info("Ask a question to see telemetry, SQL details, sources, and diagnostics here.")
