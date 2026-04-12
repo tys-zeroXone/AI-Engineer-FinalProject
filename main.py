@@ -17,11 +17,11 @@ load_dotenv()
 app = FastAPI(title="Olist Commerce Intelligence Multi-Agent API")
 
 supervisor = SupervisorAgent(
-    db_path=os.getenv("SQLITE_DB_PATH", "data/Olist_Database.db"),
+    db_path=os.getenv("SQLITE_DB_PATH"),
     qdrant_url=os.getenv("QDRANT_URL"),
     qdrant_api_key=os.getenv("QDRANT_API_KEY"),
     openai_api_key=os.getenv("OPENAI_API_KEY"),
-    collection_name=os.getenv("QDRANT_COLLECTION", "olist_docs"),
+    collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
 )
 
 
