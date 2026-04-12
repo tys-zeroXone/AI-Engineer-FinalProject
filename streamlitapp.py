@@ -13,7 +13,7 @@ from requests.exceptions import ChunkedEncodingError, RequestException
 
 load_dotenv()
 
-API_URL = os.getenv("API_URL", "https://olist-agent-181066117930.asia-southeast1.run.app")
+API_URL = os.getenv("API_URL", "https://olist-agent-181066117930.asia-southeast1.run.app/chat/")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
