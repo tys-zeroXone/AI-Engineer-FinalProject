@@ -123,16 +123,24 @@ st.markdown(
         white-space: nowrap !important;
     }
 
-    div[data-testid="stFileUploaderFile"] {
-        margin-top: 0.35rem;
-    }
-
     div[data-testid="stAudioInput"] {
         min-height: 42px !important;
     }
 
     div[data-testid="stAudioInput"] > div {
         min-height: 42px !important;
+    }
+
+    /* Make all sidebar sample prompt buttons consistent and full-width */
+    section[data-testid="stSidebar"] div.stButton > button {
+        width: 100% !important;
+        min-height: 60px !important;
+        border-radius: 12px !important;
+        white-space: normal !important;
+        text-align: center !important;
+        justify-content: center !important;
+        line-height: 1.35 !important;
+        padding: 0.8rem 1rem !important;
     }
     </style>
     """,
@@ -184,6 +192,7 @@ SQL_SAMPLES = [
     "What are the top 5 product categories by revenue?",
     "Compare seller performance by review score and late delivery rate.",
     "What is the late delivery rate by product category?",
+    "What are the most expensive product categories when combining product price and shipping cost?",
     "Which sellers have the highest average product price?",
     "Which product categories have the highest total item value?",
     "What is the relationship between freight value and product price by seller?",
@@ -194,7 +203,6 @@ RAG_SAMPLES = [
     "What are the most common complaint themes in the customer reviews?",
     "Summarize negative reviews about late delivery or products marked delivered but not received.",
     "Translate this review complaint to English and explain the sentiment.",
-    "What are the most expensive product categories when combining product price and shipping cost?",
     "What do customers say about products in the 'health beauty' category?",
     "How do customers describe their experience with garden tools products?",
     "What do reviews say about delivery experience for sports and leisure products?",
@@ -240,10 +248,13 @@ if "last_image_hash" not in st.session_state:
     st.session_state.last_image_hash = None
 if "image_uploader_version" not in st.session_state:
     st.session_state.image_uploader_version = 0
+if "forced_route" not in st.session_state:
+    st.session_state.forced_route = None
 
-def set_prompt(prompt_text: str):
+def set_prompt(prompt_text: str, forced_route: str | None = None):
     st.session_state.question_input_box = prompt_text
     st.session_state.active_input_source = None
+    st.session_state.forced_route = forced_route
     st.session_state.focus_input = True
     st.rerun()
 
@@ -350,6 +361,7 @@ def process_prompt_streaming(prompt_text: str, answer_placeholder, status_placeh
     st.session_state.voice_error = ""
     st.session_state.image_error = ""
     st.session_state.active_input_source = None
+    st.session_state.forced_route = None
 
 def transcribe_audio_file(audio_file) -> str:
     if audio_file is None:
@@ -406,8 +418,10 @@ def extract_text_from_review_screenshot(image_file) -> str:
     return (response.output_text or "").strip()
 
 def build_backend_question(visible_question: str) -> str:
+    forced_route = st.session_state.get("forced_route")
+
     if st.session_state.active_input_source == "image_review":
-        return f'''Analyze the following review text.
+        base_question = f'''Analyze the following review text.
 
 Review text:
 """{visible_question}"""
@@ -418,7 +432,13 @@ Return:
 
 Keep the answer concise and clear.
 '''
-    return visible_question
+    else:
+        base_question = visible_question
+
+    if forced_route in {"sql", "rag", "rootcause", "recommendation"}:
+        return f"[[FORCE_ROUTE:{forced_route}]]\n{base_question}"
+
+    return base_question
 
 def audio_signature(audio_file):
     if audio_file is None:
@@ -676,25 +696,25 @@ with st.sidebar:
     with st.expander("Show prompts", expanded=True):
         for q in SQL_SAMPLES:
             if st.button(q, key=f"sql_{q}"):
-                set_prompt(q)
+                set_prompt(q, forced_route="sql")
 
     render_sidebar_section_header("rag")
     with st.expander("Show prompts", expanded=False):
         for q in RAG_SAMPLES:
             if st.button(q, key=f"rag_{q}"):
-                set_prompt(q)
+                set_prompt(q, forced_route="rag")
 
     render_sidebar_section_header("rootcause")
     with st.expander("Show prompts", expanded=False):
         for q in ROOTCAUSE_SAMPLES:
             if st.button(q, key=f"root_{q}"):
-                set_prompt(q)
+                set_prompt(q, forced_route="rootcause")
 
     render_sidebar_section_header("recommendation")
     with st.expander("Show prompts", expanded=False):
         for q in RECOMMENDATION_SAMPLES:
             if st.button(q, key=f"rec_{q}"):
-                set_prompt(q)
+                set_prompt(q, forced_route="recommendation")
 
     st.divider()
     st.subheader("View Options")

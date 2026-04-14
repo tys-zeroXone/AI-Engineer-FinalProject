@@ -60,6 +60,19 @@ class SupervisorAgent:
 
         self.graph = self._build_graph()
 
+    def _extract_forced_route(self, question: str) -> tuple[Optional[str], str]:
+        match = re.match(r"^\s*\[\[FORCE_ROUTE:(sql|rag|rootcause|recommendation)\]\]\s*", question, re.IGNORECASE)
+        if not match:
+            return None, question
+        route = match.group(1).lower()
+        cleaned_question = re.sub(
+            r"^\s*\[\[FORCE_ROUTE:(sql|rag|rootcause|recommendation)\]\]\s*",
+            "",
+            question,
+            flags=re.IGNORECASE,
+        )
+        return route, cleaned_question.strip()
+
     def _heuristic_route(self, question: str) -> Optional[str]:
         q = question.lower()
 
@@ -107,14 +120,16 @@ class SupervisorAgent:
 
     def _route_question(self, state: GraphState) -> GraphState:
         start = time.perf_counter()
-        question = state["question"]
+        original_question = state["question"]
         history = state.get("history", [])
+
+        forced_route, cleaned_question = self._extract_forced_route(original_question)
 
         history_text = "\n".join(
             [f'{m.get("role", "")}: {m.get("content", "")}' for m in history[-10:]]
         )
 
-        heuristic_route = self._heuristic_route(question)
+        heuristic_route = self._heuristic_route(cleaned_question)
 
         prompt = f"""
 You are a supervisor for a multi-agent e-commerce analytics system.
@@ -143,10 +158,10 @@ Conversation History:
 {history_text}
 
 Question:
-{question}
+{cleaned_question}
 """
         response = self.router_llm.invoke(prompt)
-        route = heuristic_route or response.content.strip().lower()
+        route = forced_route or heuristic_route or response.content.strip().lower()
         if route not in {"sql", "rag", "rootcause", "recommendation"}:
             route = "sql"
 
@@ -155,12 +170,14 @@ Question:
 
         return {
             **state,
+            "question": cleaned_question,
             "route": route,
             "debug": {
                 "supervisor_telemetry": {
                     "routing": {
                         "selected_route": route,
                         "routing_latency_sec": round(elapsed, 4),
+                        "forced_route": forced_route,
                     },
                     "tokens": {
                         "input_tokens": usage.get("prompt_tokens", 0),
