@@ -147,3 +147,21 @@ async def chat_stream(request: RequestBody):
         event_generator(),
         media_type="application/x-ndjson"
     )
+
+@app.get("/debug/db-check")
+def debug_db_check():
+    db_path = os.getenv("SQLITE_DB_PATH")
+    result = {
+        "db_path": db_path,
+        "exists": False,
+        "size": None,
+        "first_bytes": None,
+    }
+
+    if db_path and os.path.exists(db_path):
+        result["exists"] = True
+        result["size"] = os.path.getsize(db_path)
+        with open(db_path, "rb") as f:
+            result["first_bytes"] = f.read(100).decode("utf-8", errors="replace")
+
+    return result
