@@ -43,7 +43,13 @@ class SupervisorAgent:
             openai_api_key=openai_api_key,
             collection_name=collection_name
         )
-        self.rootcause_agent = RootCauseAgent(db_path=db_path, openai_api_key=openai_api_key)
+        self.rootcause_agent = RootCauseAgent(
+            db_path=db_path,
+            qdrant_url=qdrant_url,
+            qdrant_api_key=qdrant_api_key,
+            openai_api_key=openai_api_key,
+            collection_name=collection_name
+        )
         self.recommendation_agent = RecommendationAgent(
             db_path=db_path,
             qdrant_url=qdrant_url,
@@ -57,6 +63,22 @@ class SupervisorAgent:
     def _heuristic_route(self, question: str) -> Optional[str]:
         q = question.lower()
 
+        recommendation_keywords = [
+            "recommend", "recommendation", "action plan", "what should",
+            "how can we improve", "what should management do", "prioritize",
+            "next steps", "how should we respond"
+        ]
+        if any(k in q for k in recommendation_keywords):
+            return "recommendation"
+
+        rootcause_keywords = [
+            "root cause", "why", "driver", "drivers", "reason", "reasons",
+            "investigate", "diagnose", "likely causes", "what is causing",
+            "what are causing", "behind the complaints"
+        ]
+        if any(k in q for k in rootcause_keywords):
+            return "rootcause"
+
         review_semantic_patterns = [
             r"\breview\b",
             r"\breviews\b",
@@ -68,34 +90,23 @@ class SupervisorAgent:
             r"\bnarrative\b",
             r"customer(s)? say",
             r"what are customers saying",
+            r"what do customers say",
+            r"describe .*experience",
+            r"delivery experience",
             r"common complaint",
             r"common complaints",
             r"translate this review",
             r"summari[sz]e .*review",
             r"theme[s]? in .*review",
+            r"what do reviews say",
         ]
         if any(re.search(pattern, q) for pattern in review_semantic_patterns):
             return "rag"
-
-        recommendation_keywords = [
-            "recommend", "recommendation", "action plan", "what should",
-            "how can we improve", "what should management do", "prioritize"
-        ]
-        if any(k in q for k in recommendation_keywords):
-            return "recommendation"
-
-        rootcause_keywords = [
-            "root cause", "why", "driver", "drivers", "reason", "reasons",
-            "investigate", "diagnose"
-        ]
-        if any(k in q for k in rootcause_keywords):
-            return "rootcause"
 
         return None
 
     def _route_question(self, state: GraphState) -> GraphState:
         start = time.perf_counter()
-
         question = state["question"]
         history = state.get("history", [])
 
@@ -115,14 +126,16 @@ Choose exactly one route from:
 - recommendation
 
 Rules:
-- sql: counts, KPIs, totals, top/bottom, trends, comparisons, trends over time, structured aggregations from tables
-- rag: any review-semantics or narrative request, including customer complaints, customer feedback, review sentiment, common themes in reviews, translation of review text, semantic similarity across reviews, and any schema/definition/glossary question
-- rootcause: why, diagnose, reasons, drivers, investigate, explain likely causes using structured analytics
-- recommendation: actions, action plan, strategy, improve, optimize, what should management do
+- sql: counts, KPIs, totals, averages, sums, top/bottom, trends, comparisons, seller/category ranking, price-freight analysis, and structured aggregations from database tables
+- rag: any review-semantics or narrative request, including customer complaints, customer feedback, review sentiment, review themes, delivery experience described in reviews, category-specific review summaries, translation of review text, and semantic similarity across reviews
+- rootcause: why, diagnose, reasons, drivers, investigate, explain likely causes, infer root causes by combining structured metrics with review evidence
+- recommendation: actions, action plan, strategy, improve, optimize, prioritize, what should management do
 
 Important:
-- If the user asks about what customers said in reviews, complaints, sentiment, review themes, or semantic patterns, choose rag.
-- Do not send review-semantic questions to sql just because they mention scores or deliveries.
+- If the user asks "what do customers say", "how do customers describe", or "what do reviews say", choose rag.
+- If the user asks about most expensive categories, highest average price, total item value, freight vs product price, or seller/category rankings, choose sql.
+- If the user asks about why complaints happen or likely causes behind complaints, choose rootcause.
+- If the user asks what should be done about complaints or how to improve the situation, choose recommendation.
 
 Return only one word.
 
@@ -192,7 +205,7 @@ Question:
             **state,
             "rootcause_answer": result["answer"],
             "rootcause_debug": result.get("debug", {}),
-            "selected_agent": "RootCauseAgent",
+            "selected_agent": "RootCauseAgent [uses SQL + RAG]",
             "debug": merged_debug
         }
 
@@ -227,13 +240,12 @@ Based on the root-cause findings above, provide prioritized recommendations.
             "answer": result["answer"],
             "selected_agent": "RecommendationAgent [uses SQL + RAG]"
             if not state.get("rootcause_answer")
-            else "RootCauseAgent [uses SQL] -> RecommendationAgent [uses SQL + RAG]",
+            else "RootCauseAgent [uses SQL + RAG] -> RecommendationAgent [uses SQL + RAG]",
             "debug": merged_debug
         }
 
     def _build_graph(self):
         workflow = StateGraph(GraphState)
-
         workflow.add_node("router", self._route_question)
         workflow.add_node("sql", self._sql_node)
         workflow.add_node("rag", self._rag_node)
@@ -262,7 +274,6 @@ Based on the root-cause findings above, provide prioritized recommendations.
 
     def run(self, question: str, history: List[Dict[str, str]]) -> Dict[str, Any]:
         total_start = time.perf_counter()
-
         state: GraphState = {
             "question": question,
             "history": history or [],
