@@ -1,4 +1,5 @@
 from typing import TypedDict, List, Dict, Any, Optional
+import re
 import time
 
 from langchain_openai import ChatOpenAI
@@ -53,6 +54,45 @@ class SupervisorAgent:
 
         self.graph = self._build_graph()
 
+    def _heuristic_route(self, question: str) -> Optional[str]:
+        q = question.lower()
+
+        review_semantic_patterns = [
+            r"\breview\b",
+            r"\breviews\b",
+            r"\bcomplaint\b",
+            r"\bcomplaints\b",
+            r"\bfeedback\b",
+            r"\bsentiment\b",
+            r"\bsemantic\b",
+            r"\bnarrative\b",
+            r"customer(s)? say",
+            r"what are customers saying",
+            r"common complaint",
+            r"common complaints",
+            r"translate this review",
+            r"summari[sz]e .*review",
+            r"theme[s]? in .*review",
+        ]
+        if any(re.search(pattern, q) for pattern in review_semantic_patterns):
+            return "rag"
+
+        recommendation_keywords = [
+            "recommend", "recommendation", "action plan", "what should",
+            "how can we improve", "what should management do", "prioritize"
+        ]
+        if any(k in q for k in recommendation_keywords):
+            return "recommendation"
+
+        rootcause_keywords = [
+            "root cause", "why", "driver", "drivers", "reason", "reasons",
+            "investigate", "diagnose"
+        ]
+        if any(k in q for k in rootcause_keywords):
+            return "rootcause"
+
+        return None
+
     def _route_question(self, state: GraphState) -> GraphState:
         start = time.perf_counter()
 
@@ -62,6 +102,8 @@ class SupervisorAgent:
         history_text = "\n".join(
             [f'{m.get("role", "")}: {m.get("content", "")}' for m in history[-10:]]
         )
+
+        heuristic_route = self._heuristic_route(question)
 
         prompt = f"""
 You are a supervisor for a multi-agent e-commerce analytics system.
@@ -73,10 +115,14 @@ Choose exactly one route from:
 - recommendation
 
 Rules:
-- sql: counts, KPIs, totals, top/bottom, trends, comparisons
-- rag: explain metrics, schema, glossary, join logic, dataset definitions
-- rootcause: why, diagnose, reasons, drivers, investigate
-- recommendation: actions, action plan, strategy, improve, optimize
+- sql: counts, KPIs, totals, top/bottom, trends, comparisons, trends over time, structured aggregations from tables
+- rag: any review-semantics or narrative request, including customer complaints, customer feedback, review sentiment, common themes in reviews, translation of review text, semantic similarity across reviews, and any schema/definition/glossary question
+- rootcause: why, diagnose, reasons, drivers, investigate, explain likely causes using structured analytics
+- recommendation: actions, action plan, strategy, improve, optimize, what should management do
+
+Important:
+- If the user asks about what customers said in reviews, complaints, sentiment, review themes, or semantic patterns, choose rag.
+- Do not send review-semantic questions to sql just because they mention scores or deliveries.
 
 Return only one word.
 
@@ -87,7 +133,7 @@ Question:
 {question}
 """
         response = self.router_llm.invoke(prompt)
-        route = response.content.strip().lower()
+        route = heuristic_route or response.content.strip().lower()
         if route not in {"sql", "rag", "rootcause", "recommendation"}:
             route = "sql"
 
@@ -179,9 +225,9 @@ Based on the root-cause findings above, provide prioritized recommendations.
         return {
             **state,
             "answer": result["answer"],
-            "selected_agent": "RecommendationAgent"
+            "selected_agent": "RecommendationAgent [uses SQL + RAG]"
             if not state.get("rootcause_answer")
-            else "RootCauseAgent -> RecommendationAgent",
+            else "RootCauseAgent [uses SQL] -> RecommendationAgent [uses SQL + RAG]",
             "debug": merged_debug
         }
 

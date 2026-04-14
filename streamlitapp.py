@@ -13,7 +13,8 @@ from requests.exceptions import ChunkedEncodingError, RequestException
 
 load_dotenv()
 
-API_URL = os.getenv("API_URL", "https://olist-agent-181066117930.asia-southeast1.run.app/chat/")
+API_URL = os.getenv("API_URL", "http://localhost:8000/chat/")
+#API_URL = os.getenv("API_URL", "https://olist-agent-181066117930.asia-southeast1.run.app/chat/")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
@@ -156,7 +157,7 @@ AGENT_THEME = {
         "text": "#047857",
         "border": "#A7F3D0",
         "label": "RAG Agent",
-        "title": "RAG Agent — Definitions & Knowledge",
+        "title": "RAG Agent — Review Semantics & Knowledge",
     },
     "rootcause": {
         "bg": "#FFF7ED",
@@ -188,21 +189,21 @@ SQL_SAMPLES = [
 ]
 
 RAG_SAMPLES = [
-    "How is late delivery defined in this system?",
-    "What does freight ratio mean?",
-    "Explain the relationship between orders, order_items, and products.",
+    "What are the most common complaint themes in the customer reviews?",
+    "Summarize negative reviews about late delivery or products marked delivered but not received.",
+    "Translate this review complaint to English and explain the sentiment.",
 ]
 
 ROOTCAUSE_SAMPLES = [
-    "Why are review scores low for some sellers?",
-    "What are the main drivers of late deliveries?",
-    "Why do some product categories have lower customer satisfaction?",
+    "Why are review scores low for some sellers based on order and delivery metrics?",
+    "What are the main structured drivers of late deliveries across sellers or categories?",
+    "Why do some categories perform worse in review score and delay rate?",
 ]
 
 RECOMMENDATION_SAMPLES = [
-    "What should management do to reduce late deliveries?",
-    "How can we improve customer satisfaction for low-performing sellers?",
-    "What actions should we prioritize to improve marketplace performance?",
+    "What should management do to reduce review complaints about late delivery and missing items?",
+    "What actions should we prioritize for sellers with poor review sentiment and weak delivery performance?",
+    "How can we improve customer satisfaction using both structured KPIs and review feedback?",
 ]
 
 
@@ -571,15 +572,18 @@ def render_sidebar_section_header(theme_key: str):
 
 
 def render_agent_tag(agent_name: str):
-    agent_to_theme = {
-        "SQLAgent": "sql",
-        "RAGAgent": "rag",
-        "RootCauseAgent": "rootcause",
-        "RecommendationAgent": "recommendation",
-        "RootCauseAgent -> RecommendationAgent": "rootcause_recommendation",
-    }
-
-    theme_key = agent_to_theme.get(agent_name)
+    if "RootCauseAgent" in agent_name and "RecommendationAgent" in agent_name:
+        theme_key = "rootcause_recommendation"
+    elif "RecommendationAgent" in agent_name:
+        theme_key = "recommendation"
+    elif "RootCauseAgent" in agent_name:
+        theme_key = "rootcause"
+    elif "RAGAgent" in agent_name:
+        theme_key = "rag"
+    elif "SQLAgent" in agent_name:
+        theme_key = "sql"
+    else:
+        theme_key = None
 
     if theme_key is None:
         bg = "#F3F4F6"
@@ -591,7 +595,7 @@ def render_agent_tag(agent_name: str):
         bg = theme["bg"]
         text = theme["text"]
         border = theme["border"]
-        label = theme["label"]
+        label = agent_name
 
     st.markdown(
         f"""
