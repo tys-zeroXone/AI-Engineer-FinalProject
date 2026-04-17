@@ -2,7 +2,7 @@
 name = "olist-multi-agent-ai"
 version = "0.1.0"
 description = "Multi-agent Generative AI system for e-commerce analytics using LangGraph, FastAPI, and Qdrant"
-authors = ["Tyson Sianipar <tyson@example.com>"]
+authors = ["Tyson Sianipar and Andre Setiawan"]
 readme = "README.md"
 package-mode = false
 

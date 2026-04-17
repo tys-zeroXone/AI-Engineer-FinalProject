@@ -445,9 +445,6 @@ RAG_SAMPLES = {
         "What are the most common complaint themes in the customer reviews?",
         "Summarize negative reviews about late delivery or products marked delivered but not received.",
     ],
-    "Translation & Sentiment": [
-        "Translate this review complaint to English and explain the sentiment.",
-    ],
     "Category Review Insights": [
         "What do customers say about products in the 'health beauty' category?",
         "How do customers describe their experience with garden tools products?",

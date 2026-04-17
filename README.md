@@ -1,405 +1,323 @@
-# 🛒 Olist Commerce Intelligence Copilot
-
-### Multi-Agent AI System for E-commerce Analytics, Diagnostics & Decision Support
-
----
+# Olist Commerce Intelligence Multi-Agent Platform
 
 ## 🚀 Executive Summary
 
-This project delivers a **production-ready multi-agent AI system** that enables business users to:
+Olist Commerce Intelligence Multi-Agent Platform is a production-grade AI analytics application built on the Brazilian Olist e-commerce dataset. The platform combines Large Language Models (LLMs), Retrieval-Augmented Generation (RAG), SQL analytics, and a multi-agent orchestration framework to deliver business insights through a modern REST API and Streamlit web interface.
 
-* Ask natural language questions about marketplace performance
-* Diagnose operational issues (e.g., late delivery, low reviews)
-* Receive **data-driven, consulting-style recommendations**
-
-The system integrates:
-
-* **Structured analytics (SQL)**
-* **Semantic retrieval (RAG via Qdrant)**
-* **Diagnostic reasoning (Root Cause Agent)**
-* **Strategic recommendations (LLM-driven)**
-
-All orchestrated through a **Supervisor Agent using LangGraph**.
+It is fully containerized with Docker, cloud deployable on Google Cloud Platform (GCP), and designed to demonstrate enterprise AI engineering best practices.
 
 ---
 
-## 🎯 Business Value
+# 📘 User Instructions (Quick Start Guide)
 
-| Capability                | Business Impact                         |
-| ------------------------- | --------------------------------------- |
-| Natural Language Querying | Eliminates dependency on SQL / BI tools |
-| Root Cause Analysis       | Faster issue diagnosis                  |
-| Recommendation Engine     | Actionable decision support             |
-| Multi-Agent Orchestration | Scalable enterprise AI architecture     |
+## 1. Introduction
 
----
+This application helps users analyze e-commerce data, customer reviews, seller performance, delivery operations, and business recommendations using natural language.
 
-## 🎯 Key Objective
-
-Enable stakeholders to ask:
-
-* *“What are the top product categories by revenue?”*
-* *“Why are review scores low?”*
-* *“What actions should we prioritize?”*
-
-…and receive **end-to-end insights → diagnosis → strategy**
+Users can ask:
+- What are the top categories by revenue?
+- Why are customer ratings low?
+- What are common complaint themes?
+- Which sellers have delivery issues?
+- What should management improve first?
 
 ---
 
-## 🧠 System Architecture
+## 2. Main Features
 
-```
-User (Streamlit UI)
-        ↓
-FastAPI Backend (/chat, /chat/stream)
-        ↓
-Supervisor Agent (LangGraph)
-        ↓
- ┌────────────┬──────────────┬──────────────┬──────────────┐
- │ SQL Agent  │ RAG Agent     │ Root Cause    │ Recommendation│
- │ (SQLite)   │ (Qdrant)      │ (Diagnostics) │ (Strategy)    │
- └────────────┴──────────────┴──────────────┴──────────────┘
-        ↓
-Final LLM Response (Streaming)
-```
+| Agent | Purpose |
+|------|---------|
+| SQL Agent | Structured analytics from database |
+| RAG Agent | Review search & semantic intelligence |
+| Root Cause Agent | Diagnose business issues |
+| Recommendation Agent | Suggest improvement actions |
+
+Supported Inputs:
+- Text
+- Voice
+- Image Upload (review screenshot)
+- Prompt Library
 
 ---
 
-## 🧩 Core Components
+## 3. Home Screen Overview
 
-### 1. Supervisor Agent (Orchestration & Routing)
+### Main Panel
+- Ask questions
+- Upload image
+- Voice input
+- Read AI responses
+- View conversation history
 
-* Routes user queries to the correct agent
-* Supports multi-step reasoning:
-
-  * **Root Cause → Recommendation**
-* Built using **LangGraph**
-
----
-
-### 2. SQL Agent (Structured Analytics)
-
-* Converts natural language → SQL query
-* Executes queries on SQLite
-* Returns business insights
-
-**Example:**
-
-> “Top 5 product categories by revenue”
+### Telemetry Panel
+- Selected agent
+- Response timing
+- SQL preview
+- Sources retrieved
+- Execution flow
 
 ---
 
-### 3. RAG Agent (Knowledge Retrieval)
+## 4. How to Ask Questions
 
-* Uses **Qdrant vector database**
-* Retrieves:
+### Text Input
+Type question then click Send.
 
-  * KPI definitions
-  * Business glossary
-  * Schema documentation
-
----
-
-### 4. Root Cause Agent (Diagnostics)
-
-* Executes multiple analytical queries
-* Identifies drivers of issues
-
----
-
-### 5. Recommendation Agent (Strategy Engine)
-
-* Combines:
-
-  * Analytics results
-  * Retrieved knowledge
-  * LLM reasoning
-
-Outputs:
-
-* Key findings
-* Implications
-* Prioritized actions
-* Executive summary
-
----
-
-## 🔊 Voice Input Feature (Latest UX)
-
-The system supports **voice-based interaction integrated into the input box**.
-
-### Flow:
-
-```
-🎙️ Record → Stop → Transcribe → Auto-fill input → Press Enter → Execute
+Example:
+```text
+Top 5 product categories by revenue
 ```
 
-### Implementation:
+### Voice Input
+Click microphone, speak clearly, then send.
 
-* `st.audio_input()` (Streamlit)
-* OpenAI transcription (`gpt-4o-mini-transcribe`)
-* Streamlit session-state lifecycle (safe pattern)
+### Image Upload
+Upload review screenshot.
+System extracts text automatically.
 
----
-
-## ⚙️ Tech Stack
-
-| Layer            | Technology                    |
-| ---------------- | ----------------------------- |
-| Frontend         | Streamlit                     |
-| Backend          | FastAPI                       |
-| Orchestration    | LangGraph                     |
-| LLM              | OpenAI (GPT-4o / GPT-4o-mini) |
-| Vector DB        | Qdrant                        |
-| Database         | SQLite                        |
-| Embeddings       | text-embedding-3-small        |
-| Containerization | Docker                        |
+Returns:
+- English translation
+- Sentiment analysis
+- Complaint understanding
 
 ---
 
-## 📂 Project Structure
+## 5. Prompt Library
 
+Choose agent category:
+- SQL Agent
+- RAG Agent
+- Root Cause Agent
+- Recommendation Agent
+
+Click sample prompt to auto-fill input box.
+
+---
+
+## 6. Example Questions by Agent
+
+### SQL Agent
+```text
+Top 5 categories by revenue
+Average review score by category
+Worst sellers by late delivery
 ```
-project/
-│
+
+### RAG Agent
+```text
+What are common complaint themes?
+Summarize negative delivery reviews
+What do customers say about electronics?
+```
+
+### Root Cause Agent
+```text
+Why are ratings low for some sellers?
+Why do categories underperform?
+```
+
+### Recommendation Agent
+```text
+What should management improve first?
+How can we improve customer satisfaction?
+```
+
+---
+
+## 7. Understanding Responses
+
+Each response includes:
+- AI answer
+- Agent label used
+- Chat history
+- Optional telemetry panel
+
+---
+
+## 8. Telemetry Panel
+
+Displays:
+- Route selected
+- Total latency
+- SQL generated
+- Sources used
+- Token usage
+- Execution timeline
+
+---
+
+## 9. Best Practices
+
+Use specific business questions.
+
+Good:
+```text
+Top 5 sellers by late delivery rate
+```
+
+Better for diagnostics:
+```text
+Why are electronics reviews low?
+```
+
+Better for recommendations:
+```text
+What should management do to reduce complaints?
+```
+
+---
+
+## 10. Troubleshooting
+
+### No Response
+- Check internet connection
+- Verify backend API running
+- Verify cloud deployment active
+
+### Voice Failed
+- Allow microphone permission
+- Retry recording
+
+### OCR Failed
+- Use clearer screenshot image
+
+---
+
+# 🏗️ High Level Architecture
+
+```text
+User
+ ↓
+Streamlit Frontend
+ ↓
+FastAPI REST API
+ ↓
+Supervisor Agent
+ ├── SQL Agent → SQLite Database
+ ├── RAG Agent → Qdrant Vector DB
+ ├── Root Cause Agent → SQL + Qdrant
+ └── Recommendation Agent → SQL + Qdrant
+```
+
+---
+
+# ⚙️ Technology Stack
+
+## Backend
+- Python 3.11+
+- FastAPI
+- LangChain
+- LangGraph
+- OpenAI API
+
+## Frontend
+- Streamlit
+
+## Databases
+- SQLite
+- Qdrant Cloud
+
+## DevOps
+- Docker
+- Google Cloud Run
+
+---
+
+# 📂 Project Structure
+
+```text
+.
+├── main.py
+├── streamlitapp.py
+├── setup_qdrant.py
+├── dockerfile
+├── docker-compose.yml
+├── requirements.txt
 ├── agents/
+│   ├── supervisor.py
 │   ├── sql_agent.py
 │   ├── rag_agent.py
 │   ├── rootcause_agent.py
-│   ├── recommendation_agent.py
-│   └── supervisor.py
-│
-├── tools/
-│   ├── db_tools.py
-│   ├── analytics_tools.py
-│   ├── rag_tools.py
-│   └── schema_tools.py
-│
-├── data/
-│   └── Olist_Database.db
-│
-├── docs/
-│   ├── schema_docs.jsonl
-│   ├── business_glossary.jsonl
-│   └── kpi_docs.jsonl
-│
-├── setup_qdrant.py
-├── main.py                # FastAPI backend
-├── streamlitapp.py       # UI (text + voice input)
-├── docker-compose.yaml
-├── Dockerfile
-├── requirements.txt
-├── pyproject.toml
-└── README.md
+│   └── recommendation_agent.py
+└── tools/
+    ├── db_tools.py
+    ├── rag_tools.py
+    ├── analytics_tools.py
+    └── schema_tools.py
 ```
 
 ---
 
-## 🔄 API Endpoints
-
-### Health Check
-
-```
-GET /
-```
-
-### Standard Chat
-
-```
-POST /chat/
-```
-
-### Streaming Chat (Primary)
-
-```
-POST /chat/stream/
-```
-
-Format:
-
-```
-application/x-ndjson
-```
-
-Supports real-time token streaming 
-
----
-
-## 🐳 Docker Deployment (Recommended)
-
-```bash
-docker-compose up --build
-```
-
-Services:
-
-* API → http://localhost:8000
-* UI → http://localhost:8501
-
----
-
-## 🛠️ Local Development Setup
-
-### 1. Install Dependencies
-
-```bash
-poetry install
-```
-
-or
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
-### 2. Environment Variables
-
-Create `.env`:
+# 🔐 Environment Variables
 
 ```env
 OPENAI_API_KEY=your_key
-QDRANT_URL=your_qdrant_url
+SQLITE_DB_PATH=./Olist_Database.db
+QDRANT_URL=https://cluster.qdrant.io
 QDRANT_API_KEY=your_key
-QDRANT_COLLECTION=olist_docs
-SQLITE_DB_PATH=data/Olist_Database.db
+QDRANT_COLLECTION_NAME=olist_docs
 API_URL=http://localhost:8000/chat/
 ```
 
 ---
 
-### 3. Initialize Vector Database
+# 🛠️ Local Setup
 
+## Install
 ```bash
-python setup_qdrant.py
+pip install -r requirements.txt
 ```
 
-Loads documents into Qdrant
-
----
-
-### 4. Run Backend
-
+## Run Backend
 ```bash
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload
 ```
 
----
-
-### 5. Run Frontend
-
+## Run Frontend
 ```bash
 streamlit run streamlitapp.py
 ```
 
 ---
 
-## 🧪 Example Queries
+# 🐳 Docker Deployment
 
-### 📊 SQL Agent
-
-* “Top product categories by revenue”
-* “Late delivery rate by seller”
-
-### 📚 RAG Agent
-
-* “What is freight ratio?”
-* “Explain dataset schema”
-
-### 🔍 Root Cause Agent
-
-* “Why are review scores low?”
-* “What drives late deliveries?”
-
-### 🎯 Recommendation Agent
-
-* “How to improve marketplace performance?”
-* “What actions should management prioritize?”
+```bash
+docker build -t olist-agent .
+docker run -p 8000:8000 --env-file .env olist-agent
+```
 
 ---
 
-## 📊 Observability & Telemetry
+# ☁️ Google Cloud Deployment
 
-The system includes a **dedicated Observability Panel**:
+```bash
+gcloud builds submit --tag gcr.io/PROJECT_ID/olist-agent
 
-Tracked metrics:
-
-* Routing latency
-* SQL execution time
-* Token usage
-* Retrieved documents
-* Diagnostic outputs
-* Recommendation pipeline
-
-⚠️ Note: Accuracy shown reflects execution quality, not ground-truth evaluation.
+gcloud run deploy olist-agent \
+--image gcr.io/PROJECT_ID/olist-agent \
+--region asia-southeast1 \
+--allow-unauthenticated
+```
 
 ---
 
-## 🧠 Design Principles
+# 📈 Final Project Coverage
 
-### ✅ Multi-Agent Modularity
-
-Each agent solves a specific class of problem
-
-### ✅ Hybrid Intelligence
-
-Combines:
-
-* Structured data
-* Unstructured knowledge
-* LLM reasoning
-
-### ✅ Streaming UX
-
-Real-time response generation
-
-### ✅ Production-Ready Architecture
-
-* API layer separation
-* UI layer
-* Dockerized deployment
-* Environment-driven configuration
+| Requirement | Status |
+|------------|--------|
+| Multi-Agent Architecture | ✅ |
+| SQL Analytics | ✅ |
+| RAG Search | ✅ |
+| Dockerized App | ✅ |
+| Cloud Deployment | ✅ |
+| Streamlit UI | ✅ |
+| Multimodal Inputs | ✅ |
+| Production UX/UI | ✅ |
 
 ---
 
-## ⚠️ Limitations
+# 👨‍💻 Author Note
 
-* No ground-truth evaluation framework
-* SQL generation may fail on edge cases
-* RAG depends on document quality
-* No long-term conversational memory
+Built as a final capstone AI Engineering project demonstrating real-world GenAI architecture, cloud deployment, multi-agent orchestration, and business intelligence automation.
 
----
-
-## 🔮 Future Enhancements
-
-* Evaluation framework (accuracy scoring)
-* Memory layer (vector conversation memory)
-* Role-based UI (business vs technical mode)
-* SQL validation & guardrails
-* Redis caching layer
-* Export to dashboard / slides
-
----
-
-## 👨‍💻 Authors
-
-**Tyson Sianipar**
-**Andre Setiawan**
-
-AI Engineering Final Project
-
----
-
-## ⭐ Summary
-
-This project demonstrates a **real-world enterprise AI pattern**:
-
-> **Data → Insight → Diagnosis → Recommendation**
-
-Delivered through a **multi-agent architecture with LLM orchestration**
-
----
-
-⭐ If you find this useful, feel free to star the repo!
