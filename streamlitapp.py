@@ -671,18 +671,53 @@ def extract_text_from_review_screenshot(image_file) -> str:
 
 def build_backend_question(visible_question: str) -> str:
     if st.session_state.active_input_source == "image_review":
-        return f"""Analyze the following review text.
-
-Review text:
-{visible_question}
-
-Return:
-1. English translation
-2. Sentiment analysis based on the English translation
-
-Keep the answer concise and clear.
-"""
+        return visible_question
     return visible_question
+
+
+def analyze_review_text_direct(review_text: str) -> str:
+    if openai_client is None:
+        raise RuntimeError("OPENAI_API_KEY is not configured.")
+
+    response = openai_client.responses.create(
+        model="gpt-4.1-mini",
+        input=[
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "You are an expert e-commerce review analyst. "
+                            "Your task is to translate customer review text into clear English and then provide a concise semantic analysis. "
+                            "Do not use external context. Analyze only the review text provided by the user."
+                        ),
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "Translate the following customer review into English and provide semantic analysis.\n\n"
+                            f"Review text:\n{review_text}\n\n"
+                            "Return exactly these sections:\n"
+                            "1. English Translation\n"
+                            "2. Semantic Analysis\n\n"
+                            "For the semantic analysis, cover:\n"
+                            "- overall sentiment\n"
+                            "- key complaint or praise themes\n"
+                            "- likely customer expectation or issue\n\n"
+                            "Keep the answer concise and easy to read."
+                        ),
+                    }
+                ],
+            },
+        ],
+    )
+    return (response.output_text or "").strip()
 
 def audio_signature(audio_file):
     if audio_file is None:
@@ -786,6 +821,16 @@ def render_agent_tag(agent_name: str):
         html = _render_agent_pill("rag", AGENT_THEME["rag"]["label"])
     elif "SQLAgent" in agent_name:
         html = _render_agent_pill("sql", AGENT_THEME["sql"]["label"])
+    elif "Direct Review Analysis" in agent_name:
+        html = """
+        <span class="agent-tag" style="
+            background-color: #EEF2FF;
+            color: #4338CA;
+            border-color: #C7D2FE;
+        ">
+            Direct Review Analysis
+        </span>
+        """
     else:
         html = f"""
         <span class="agent-tag" style="
@@ -1584,11 +1629,46 @@ def render_chat_exchange(display_question_text: str, backend_question_text: str)
     with st.chat_message("assistant"):
         answer_placeholder = st.empty()
         status_placeholder = st.empty()
-        process_prompt_streaming(
-            backend_question_text,
-            answer_placeholder=answer_placeholder,
-            status_placeholder=status_placeholder,
-        )
+
+        if st.session_state.active_input_source == "image_review":
+            try:
+                status_placeholder.markdown(
+                    """
+                    <div class="typing">
+                        <span>Translating and analyzing review</span>
+                        <span class="dot"></span>
+                        <span class="dot"></span>
+                        <span class="dot"></span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                answer_text = analyze_review_text_direct(display_question_text)
+                answer_placeholder.markdown(answer_text)
+                status_placeholder.empty()
+                completed_chat = {
+                    "question": display_question_text,
+                    "answer": answer_text,
+                    "agent": "Direct Review Analysis",
+                    "debug": {},
+                }
+                st.session_state.conversations.append(completed_chat)
+                st.session_state.last_debug = {}
+                st.session_state.clear_input_on_next_run = True
+                st.session_state.focus_input = True
+                st.session_state.voice_error = ""
+                st.session_state.image_error = ""
+                st.session_state.active_input_source = None
+            except Exception as e:
+                status_placeholder.empty()
+                answer_placeholder.markdown(f"Review analysis error: {e}")
+        else:
+            process_prompt_streaming(
+                backend_question_text,
+                answer_placeholder=answer_placeholder,
+                status_placeholder=status_placeholder,
+            )
+
         render_agent_tag(st.session_state.conversations[-1].get("agent", "Unknown"))
     st.divider()
 
