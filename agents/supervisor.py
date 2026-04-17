@@ -74,7 +74,7 @@ class SupervisorAgent:
         return route, cleaned_question.strip()
 
     def _heuristic_route(self, question: str) -> Optional[str]:
-        q = question.lower()
+        q = question.lower().strip()
 
         recommendation_keywords = [
             "recommend", "recommendation", "action plan", "what should",
@@ -92,7 +92,38 @@ class SupervisorAgent:
         if any(k in q for k in rootcause_keywords):
             return "rootcause"
 
-        review_semantic_patterns = [
+        sql_patterns = [
+            r"\btop\s+\d+\b",
+            r"\bhighest\b",
+            r"\blowest\b",
+            r"\baverage\b",
+            r"\bavg\b",
+            r"\brevenue\b",
+            r"\btotal\b",
+            r"\brate\b",
+            r"\bcount\b",
+            r"\bcompare\b",
+            r"\bcomparison\b",
+            r"\brank\b",
+            r"\branking\b",
+            r"\bby seller\b",
+            r"\bby category\b",
+            r"\bproduct category\b",
+            r"\bseller performance\b",
+            r"\breview score\b",
+            r"\blate delivery rate\b",
+            r"\bfreight value\b",
+            r"\bproduct price\b",
+            r"\bwhich sellers\b",
+            r"\bsellers are located in\b",
+            r"\bwhat products do they sell\b",
+            r"\bmost expensive\b",
+            r"\bitem value\b",
+        ]
+        if any(re.search(pattern, q) for pattern in sql_patterns):
+            return "sql"
+
+        rag_patterns = [
             r"\breview\b",
             r"\breviews\b",
             r"\bcomplaint\b",
@@ -104,6 +135,7 @@ class SupervisorAgent:
             r"customer(s)? say",
             r"what are customers saying",
             r"what do customers say",
+            r"how do customers describe",
             r"describe .*experience",
             r"delivery experience",
             r"common complaint",
@@ -113,7 +145,7 @@ class SupervisorAgent:
             r"theme[s]? in .*review",
             r"what do reviews say",
         ]
-        if any(re.search(pattern, q) for pattern in review_semantic_patterns):
+        if any(re.search(pattern, q) for pattern in rag_patterns):
             return "rag"
 
         return None
@@ -147,8 +179,9 @@ Rules:
 - recommendation: actions, action plan, strategy, improve, optimize, prioritize, what should management do
 
 Important:
-- If the user asks "what do customers say", "how do customers describe", or "what do reviews say", choose rag.
-- If the user asks about most expensive categories, highest average price, total item value, freight vs product price, or seller/category rankings, choose sql.
+- If the user asks "what do customers say", "how do customers describe", "summarize reviews", "complaint themes", or "what do reviews say", choose rag.
+- If the user asks about most expensive categories, highest average price, total item value, freight vs product price, seller/category rankings, review score comparisons, late delivery rate, or seller/product lookups such as "which sellers are located in São Paulo and what products do they sell", choose sql.
+- If the question mentions review score or late delivery rate as metrics to compare, aggregate, rank, average, or analyze by seller/category, choose sql even if the words "review" or "reviews" appear.
 - If the user asks about why complaints happen or likely causes behind complaints, choose rootcause.
 - If the user asks what should be done about complaints or how to improve the situation, choose recommendation.
 
